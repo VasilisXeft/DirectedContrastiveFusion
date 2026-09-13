@@ -1,44 +1,48 @@
 # DirectedContrastiveFusion
 
-PyTorch research framework for **trainable, sparse, directed and sample-dependent cross-modal interaction selection**. It is designed to test whether a multimodal model can learn which directional cross-modal interactions are worth computing instead of executing the complete directed interaction graph.
+PyTorch research framework for **trainable, sparse, directed and sample-dependent cross-modal interaction selection**. The framework is **pretrained-first and encoder-agnostic**: each modality can use its strongest appropriate unimodal pretrained encoder, while the proposed method learns which directional cross-modal interactions are worth computing.
 
-## Core method
+## Architecture
 
-For modalities `A` and `B`, `A -> B` and `B -> A` are distinct interactions. The learned selector uses separate source and target projections, so the scores are asymmetric. For an edge `src -> tgt`, target tokens query source tokens and source information enriches the target representation.
+```text
+modality x_m
+    -> modality-specific pretrained encoder E_m
+    -> projection adapter to shared d_model
+    -> directed sample-dependent selector
+    -> sparse cross-modal attention
+    -> multimodal task head
+```
 
-`directed_topk` and `contrastive_topk` use hard top-k routing in the forward pass with a straight-through Gumbel/softmax estimator during training. Therefore the task loss can optimize the selector end-to-end. `contrastive_topk` additionally uses symmetric InfoNCE between modality representations.
+For modalities `A` and `B`, `A -> B` and `B -> A` are distinct interactions. Separate source and target projections make directional scores asymmetric. For `src -> tgt`, target tokens query source tokens and source information enriches the target representation.
+
+`directed_topk` and `contrastive_topk` use hard top-k routing in the forward pass with a straight-through Gumbel/softmax estimator during training. `contrastive_topk` additionally uses symmetric InfoNCE between modality representations:
 
 ```text
 L = L_task + lambda_c * L_contrastive
 ```
 
-No diversity/entropy penalty is enabled by default: a deterministic graph is allowed when it is genuinely optimal for the data.
+No diversity/entropy penalty is enabled by default: deterministic routing is allowed when it is genuinely optimal.
 
-## Implemented fusion modes
+## Pretrained unimodal encoders
+
+Publication experiments are intended to exploit existing unimodal knowledge rather than relearn every modality from scratch. Encoder choice is configured independently for each modality in YAML. Built-in registry paths include `torchvision`, `timm`, `huggingface`, `precomputed`, and lightweight generic fallbacks. Every encoder is adapted to the common token contract `[B, T, d_model]`.
+
+Specialist encoders (e.g. EEG, IMU, skeleton, audio, video) can either be wrapped in the registry or used offline with `type: precomputed`. See `docs/ENCODERS.md`. Generic encoders are retained primarily for smoke tests and backbone-controlled ablations.
+
+## Fusion modes
 
 - `late` — pooled late fusion, no cross-modal attention
 - `full` — exhaustive directed pairwise cross-attention
-- `random_topk` — random `k` outgoing edges per source modality
+- `random_topk` — random `k` outgoing edges per source
 - `similarity_topk` — cosine-similarity sparse baseline
-- `directed_topk` — trainable asymmetric directed selector, task loss only
-- `contrastive_topk` — same trainable selector + contrastive objective
+- `directed_topk` — trainable asymmetric selector, task loss only
+- `contrastive_topk` — same selector + contrastive objective
 
 With `M` modalities, full directed fusion has `M(M-1)` interactions; top-k routing keeps at most `M*k`.
 
 ## Dataset-agnostic design
 
-The selector, fusion, training, evaluation and benchmarking code do not depend on a specific dataset. Raw dataset peculiarities live only in `src/cmf/datasets/`.
-
-Included adapters/configurations:
-
-- generic preprocessed multimodal datasets
-- synthetic smoke-test dataset
-- UTD-MHAD
-- MAHNOB-HCI
-- MMAct
-- TotalCapture
-
-For a new dataset, convert each aligned sample once to the common `.npz` cache format. See [`docs/CUSTOM_DATASETS.md`](docs/CUSTOM_DATASETS.md) and [`examples/custom_dataset_adapter.py`](examples/custom_dataset_adapter.py).
+Dataset peculiarities live in `src/cmf/datasets/`; the encoder/selector/fusion/training code is shared. Included adapters/configurations cover generic preprocessed data, synthetic smoke tests, UTD-MHAD, MAHNOB-HCI, MMAct and TotalCapture. For a new dataset, align/window the streams and convert them to the common cache format described in `docs/CUSTOM_DATASETS.md`.
 
 ## Installation
 
@@ -46,16 +50,12 @@ Python 3.10–3.12 is recommended.
 
 ```bash
 python -m venv .venv
-# Windows
 .venv\Scripts\activate
-# Linux/macOS
-# source .venv/bin/activate
-
 python -m pip install --upgrade pip
 pip install -e .
 ```
 
-For CUDA, install the PyTorch build appropriate for the machine first, then install the package.
+For CUDA, install the appropriate PyTorch build first. Pretrained registry support uses torchvision, timm and Hugging Face Transformers.
 
 ## Smoke test
 
@@ -63,75 +63,63 @@ For CUDA, install the PyTorch build appropriate for the machine first, then inst
 python scripts/preprocess.py --config configs/synthetic.yaml
 python scripts/train.py --config configs/synthetic.yaml
 python scripts/evaluate.py --checkpoint runs/synthetic/contrastive_topk/best.pt --cache data/processed/synthetic
-python scripts/benchmark.py --checkpoint runs/synthetic/contrastive_topk/best.pt --cache data/processed/synthetic
-```
-
-Run all baselines/ablations:
-
-```bash
 python scripts/run_baselines.py --config configs/synthetic.yaml
 ```
 
-## Any new dataset
+## New datasets / encoder configuration
 
-1. Align/window/resample the raw modalities into fixed per-modality shapes.
-2. Save samples using `cmf.utils.io.save_npz` and create `manifest.csv`.
-3. Copy `configs/generic.yaml` and set the task/cache path.
-4. Validate the cache:
+Copy `configs/generic.yaml`, set the cache/task, and define an encoder per modality. Example:
 
-```bash
-python scripts/preprocess.py --config configs/generic.yaml
+```yaml
+model:
+  d_model: 128
+  encoders:
+    rgb:
+      type: timm
+      name: vit_base_patch16_224
+      pretrained: true
+    depth:
+      type: timm
+      name: resnet18
+      pretrained: true
+      in_chans: 1
+    skeleton:
+      type: precomputed
+      feature_dim: 256
+    inertial:
+      type: precomputed
+      feature_dim: 256
 ```
 
-5. Train any fusion mode:
-
-```bash
-python scripts/train.py --config configs/generic.yaml --mode full
-python scripts/train.py --config configs/generic.yaml --mode directed_topk
-python scripts/train.py --config configs/generic.yaml --mode contrastive_topk
-```
+All fusion baselines should use the **same unimodal encoders** so differences measure the proposed routing/fusion method rather than backbone quality.
 
 ## Missing/noisy modalities
 
-Samples carry a modality-presence mask. Naturally missing streams are listed in `meta["missing_modalities"]`; training can additionally simulate missing inputs through `training.modality_dropout`. Reliability gates are learned per modality and influence both fused features and directional selection scores.
+Samples carry modality-presence masks; training can additionally simulate missing streams through `training.modality_dropout`. Learned reliability gates influence fused features and directional scores. Controlled corruption is a diagnostic of quality-adaptive routing, not by itself proof of selector failure.
 
-Controlled corruption should be treated as a diagnostic of quality-adaptive routing, not as evidence of selector failure by itself.
+## Evaluation
 
-## Evaluation protocol
+Classification and fixed-shape regression are supported. Subject-independent evaluation is recommended. `scripts/run_loso_utd.py` is the current LOSO example. The model exposes per-sample `hard_masks`, directional scores, reliability values and selected-pair counts for routing analysis.
 
-The framework supports classification and fixed-shape regression. Subject-independent splits are recommended. Dataset-specific LOSO utilities can be built on the same common cache format; `scripts/run_loso_utd.py` is the current UTD-MHAD example.
+## Dataset notes
 
-For routing analysis, the model exposes per-sample `hard_masks`, directional scores, reliability values and selected-pair counts through its auxiliary output.
-
-## Existing dataset notes
-
-### UTD-MHAD
-Use RGB + Depth + Skeleton + Inertial for the publication-quality heterogeneous-modality experiment. The `utd_mhad_subset.yaml` configuration that splits the 6-D inertial stream into accelerometer and gyroscope exists only for architecture validation; accelerometer and gyroscope from the same unit should not be presented as fully independent sensing modalities.
-
-### MAHNOB-HCI
-Useful for heterogeneous affective HCI and reliability/missing-modality experiments. Adjust protected-dataset paths to your local release.
-
-### MMAct
-The main intended scalability benchmark because it exposes many sensing streams. Different distributed layouts may require adapting only the raw filename/key matching in its preprocessor.
-
-### TotalCapture
-Useful for testing whether the selector generalizes beyond classification to structured pose regression. Publication-quality pose metrics require the exact synchronization/calibration protocol chosen for the experiment.
+For UTD-MHAD, the intended publication experiment is RGB + Depth + Skeleton + Inertial. The accelerometer/gyroscope split used previously is architecture validation only. MAHNOB-HCI provides heterogeneous affective modalities; MMAct is the intended scalability benchmark; TotalCapture tests generalization to structured pose regression.
 
 ## Repository structure
 
 ```text
-configs/                    experiment configurations
+configs/                    experiment + encoder configurations
 scripts/                    CLI entry points
-src/cmf/models/             encoders + directed sparse fusion
-src/cmf/datasets/           common cache interface + raw adapters
+src/cmf/models/encoders.py  pretrained encoder registry + adapters
+src/cmf/models/fusion.py    directed sparse fusion
+src/cmf/datasets/           dataset adapters/common cache
 src/cmf/train.py            dataset-agnostic training
-src/cmf/evaluate.py         evaluation
-src/cmf/benchmark.py        latency/memory/interaction benchmarking
+docs/ENCODERS.md            pretrained encoder contract
 docs/CUSTOM_DATASETS.md     new-dataset specification
-examples/                   adapter template
+examples/                   adapter templates
 tests/                      smoke tests
 ```
 
 ## Research status
 
-This is active research code. Existing UTD-MHAD 3-stream experiments are architecture-validation results, not final benchmark claims. The next stronger validation should use genuinely independent modalities and multiple datasets before drawing conclusions about routing behavior.
+Active research code. Existing UTD-MHAD 3-stream results are architecture-validation experiments, not final benchmark claims. Publication experiments should use genuinely heterogeneous modalities, strong unimodal encoders, identical backbones across fusion baselines, multiple seeds/folds and controlled reliability diagnostics.
