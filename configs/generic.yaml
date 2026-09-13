@@ -4,8 +4,8 @@ output_dir: runs
 dataset:
   name: generic
   cache_dir: data/processed/my_dataset
-  task: classification        # classification | regression
-  num_classes: 4              # omit for regression; can also be inferred from manifest.label
+  task: classification
+  num_classes: 4
 
 model:
   d_model: 128
@@ -17,6 +17,31 @@ model:
   gumbel: true
   reliability: true
   contrastive_weight: 0.1
+
+  # Publication experiments should normally use strong modality-specific
+  # pretrained encoders. All outputs are projected to d_model automatically.
+  # Generic encoders remain available for ablations and smoke tests.
+  encoders:
+    rgb:
+      type: timm
+      name: vit_base_patch16_224
+      pretrained: true
+      freeze: false
+      in_chans: 3
+    depth:
+      type: timm
+      name: resnet18
+      pretrained: true
+      freeze: false
+      in_chans: 1
+    inertial:
+      # For specialist pretrained models, extract features offline and use
+      # type: precomputed, or add a small registry wrapper in encoders.py.
+      type: precomputed
+      feature_dim: 256
+    skeleton:
+      type: precomputed
+      feature_dim: 256
 
 training:
   epochs: 30
