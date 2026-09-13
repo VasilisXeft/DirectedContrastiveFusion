@@ -1,0 +1,23 @@
+seed: 42
+output_dir: runs
+dataset:
+  name: synthetic
+  cache_dir: data/processed/synthetic
+  task: classification
+  n_samples: 240
+  num_classes: 4
+model:
+  d_model: 64
+  heads: 4
+  topk: 1
+  mode: contrastive_topk
+  temperature: 0.1
+  contrastive_weight: 0.1
+  reliability: true
+training:
+  epochs: 5
+  batch_size: 16
+  workers: 0
+  lr: 0.0005
+  weight_decay: 0.0001
+  modality_dropout: 0.1

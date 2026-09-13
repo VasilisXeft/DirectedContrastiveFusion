@@ -1,0 +1,26 @@
+seed: 42
+output_dir: runs
+dataset:
+  name: mmact
+  raw_dir: data/raw/MMAct
+  cache_dir: data/processed/mmact
+  task: classification
+  length: 128
+  video_frames: 16
+  image_size: 112
+  include_modalities: [rgb, pose, acc_phone, acc_watch, gyro, orientation]
+model:
+  d_model: 128
+  heads: 4
+  topk: 1
+  mode: contrastive_topk
+  temperature: 0.1
+  contrastive_weight: 0.1
+  reliability: true
+training:
+  epochs: 30
+  batch_size: 6
+  workers: 0
+  lr: 0.0003
+  weight_decay: 0.0001
+  modality_dropout: 0.1

@@ -1,0 +1,27 @@
+seed: 42
+output_dir: runs
+dataset:
+  name: totalcapture
+  raw_dir: data/raw/totalcapture
+  cache_dir: data/processed/totalcapture
+  task: regression
+  length: 64
+  video_frames: 16
+  image_size: 112
+  camera: 1
+  pose_joints: 21
+model:
+  d_model: 128
+  heads: 4
+  topk: 1
+  mode: contrastive_topk
+  temperature: 0.1
+  contrastive_weight: 0.05
+  reliability: true
+training:
+  epochs: 30
+  batch_size: 4
+  workers: 0
+  lr: 0.0003
+  weight_decay: 0.0001
+  modality_dropout: 0.05

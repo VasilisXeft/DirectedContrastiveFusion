@@ -1,0 +1,30 @@
+seed: 42
+output_dir: runs
+dataset:
+  name: mahnob_hci
+  raw_dir: data/raw/MAHNOB-HCI
+  cache_dir: data/processed/mahnob_hci
+  task: classification
+  target: valence
+  num_classes: 3
+  length: 256
+  video_frames: 16
+  image_size: 112
+  valence_bins: [3, 6]
+  arousal_bins: [3, 6]
+  face_video_glob: "*C1*.avi"
+model:
+  d_model: 128
+  heads: 4
+  topk: 1
+  mode: contrastive_topk
+  temperature: 0.1
+  contrastive_weight: 0.1
+  reliability: true
+training:
+  epochs: 30
+  batch_size: 8
+  workers: 0
+  lr: 0.0003
+  weight_decay: 0.0001
+  modality_dropout: 0.1

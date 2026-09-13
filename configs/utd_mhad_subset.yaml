@@ -1,0 +1,37 @@
+seed: 42
+output_dir: runs
+
+dataset:
+  name: utd_mhad
+  raw_dir: data/raw/UTD-MHAD-subset
+  cache_dir: data/processed/utd_mhad_subset
+  task: classification
+  num_classes: 27
+  length: 64
+  video_frames: 16
+  image_size: 112
+  include_modalities: [skeleton, accel, gyro]
+  split_inertial: true
+  train_subjects: [1, 3, 5]
+  val_subjects: [7]
+  test_subjects: [2, 4, 6, 8]
+
+model:
+  d_model: 96
+  heads: 4
+  topk: 1
+  mode: contrastive_topk
+  temperature: 0.1
+  contrastive_weight: 0.1
+  reliability: true
+  selector_temperature: 0.7
+  gumbel: true
+
+training:
+  epochs: 15
+  batch_size: 16
+  workers: 0
+  lr: 0.0005
+  weight_decay: 0.0001
+  modality_dropout: 0.05
+  cpu: true

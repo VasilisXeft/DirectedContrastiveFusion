@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "directed-contrastive-fusion"
+version = "0.1.0"
+description = "Trainable sparse directed cross-modal interaction selection for multimodal learning"
+requires-python = ">=3.10"
+dependencies = [
+  "torch>=2.2",
+  "torchvision>=0.17",
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "scipy>=1.10",
+  "scikit-learn>=1.3",
+  "pyyaml>=6.0",
+  "opencv-python>=4.8",
+  "mne>=1.6",
+  "tqdm>=4.66",
+  "psutil>=5.9",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

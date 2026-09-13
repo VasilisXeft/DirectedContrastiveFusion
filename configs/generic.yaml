@@ -1,0 +1,28 @@
+seed: 42
+output_dir: runs
+
+dataset:
+  name: generic
+  cache_dir: data/processed/my_dataset
+  task: classification        # classification | regression
+  num_classes: 4              # omit for regression; can also be inferred from manifest.label
+
+model:
+  d_model: 128
+  heads: 4
+  mode: contrastive_topk
+  topk: 1
+  temperature: 0.1
+  selector_temperature: 0.7
+  gumbel: true
+  reliability: true
+  contrastive_weight: 0.1
+
+training:
+  epochs: 30
+  batch_size: 16
+  workers: 0
+  lr: 0.0003
+  weight_decay: 0.0001
+  modality_dropout: 0.0
+  cpu: false
