@@ -11,12 +11,14 @@ model:
   d_model: 128
   heads: 4
   mode: contrastive_topk
-  topk: 1
+  # Global directed interaction budget K. Sparse modes choose K edges from all
+  # M(M-1) candidate src->tgt interactions; the budget is not split per source.
+  topk: 3
   temperature: 0.1
   selector_temperature: 0.7
   gumbel: true
   reliability: true
-  contrastive_weight: 0.1
+  contrastive_weight: 0.005
 
   # Publication experiments should normally use strong modality-specific
   # pretrained encoders. All outputs are projected to d_model automatically.
