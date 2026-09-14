@@ -6,9 +6,15 @@ from cmf.models.encoders import build_encoder
 
 
 class ContrastiveSparseFusion(nn.Module):
-    """Encoder-agnostic directed sparse cross-modal fusion."""
+    """Encoder-agnostic directed sparse cross-modal fusion.
+
+    Sparse modes use a *global* directed edge budget: ``topk=K`` selects the K
+    highest-scoring directed interactions among all available src->tgt pairs
+    for each sample. This intentionally does not force every modality to spend
+    the same number of outgoing edges.
+    """
     def __init__(self, modality_shapes, num_outputs, task="classification", d_model=128, heads=4,
-                 topk=1, mode="contrastive_topk", temperature=0.1, reliability=True,
+                 topk=3, mode="contrastive_topk", temperature=0.1, reliability=True,
                  selector_temperature=0.7, gumbel=True, encoder_configs=None):
         super().__init__(); self.names=list(modality_shapes); self.mode=mode; self.topk=int(topk); self.temperature=float(temperature); self.selector_temperature=float(selector_temperature); self.use_gumbel=bool(gumbel); self.task=task
         encoder_configs=encoder_configs or {}
@@ -44,29 +50,34 @@ class ContrastiveSparseFusion(nn.Module):
     def _static_similarity_scores(self,z,present):
         return {(s,t):torch.where(present[s]*present[t]>0,(z[s]*z[t]).sum(-1),torch.full_like(present[s],-1e4)) for s,t in itertools.permutations(self.names,2)}
 
-    def _st_topk(self,mat):
-        k=min(self.topk,mat.shape[1]); logits=mat/max(self.selector_temperature,1e-5)
+    def _st_topk(self,mat, valid=None):
+        """Straight-through global top-K over candidate directed edges."""
+        logits=mat/max(self.selector_temperature,1e-5)
+        if valid is not None:
+            logits=torch.where(valid,logits,torch.full_like(logits,-1e4))
         if self.training and self.use_gumbel:
             u=torch.rand_like(logits).clamp_(1e-6,1-1e-6); logits=logits-torch.log(-torch.log(u))
-        probs=F.softmax(logits,dim=1); idx=probs.topk(k,dim=1).indices; hard=torch.zeros_like(probs).scatter_(1,idx,1.)
+        probs=F.softmax(logits,dim=1)
+        if valid is not None:
+            probs=probs*valid.float(); probs=probs/probs.sum(1,keepdim=True).clamp_min(1e-8)
+        k=min(self.topk,mat.shape[1]); idx=logits.topk(k,dim=1).indices; hard=torch.zeros_like(probs).scatter_(1,idx,1.)
+        if valid is not None: hard=hard*valid.float()
         return (hard+probs-probs.detach(),hard) if self.training else (hard,hard)
 
     def _selection(self,scores,batch_size,device):
-        weights={p:torch.zeros(batch_size,device=device) for p in scores}; hard_masks={p:torch.zeros(batch_size,dtype=torch.bool,device=device) for p in scores}
+        pairs=list(scores.keys()); weights={p:torch.zeros(batch_size,device=device) for p in pairs}; hard_masks={p:torch.zeros(batch_size,dtype=torch.bool,device=device) for p in pairs}
         if self.mode=="full":
             for p in weights: weights[p].fill_(1.); hard_masks[p].fill_(True)
         elif self.mode=="random_topk":
-            for src in self.names:
-                tgts=[t for t in self.names if t!=src]
-                for bi in range(batch_size):
-                    for j in torch.randperm(len(tgts),device=device)[:min(self.topk,len(tgts))].tolist(): weights[(src,tgts[j])][bi]=1.; hard_masks[(src,tgts[j])][bi]=True
+            mat=torch.stack([scores[p] for p in pairs],1); valid=mat>-1e3
+            rand=torch.rand_like(mat).masked_fill(~valid,-1.); k=min(self.topk,len(pairs)); idx=rand.topk(k,dim=1).indices; hard=torch.zeros_like(mat).scatter_(1,idx,1.)*valid.float()
+            for j,p in enumerate(pairs): weights[p]=hard[:,j]; hard_masks[p]=hard[:,j].bool()
         elif self.mode in {"contrastive_topk","directed_topk","similarity_topk"}:
-            for src in self.names:
-                tgts=[t for t in self.names if t!=src]; mat=torch.stack([scores[(src,t)] for t in tgts],1)
-                if self.mode in {"contrastive_topk","directed_topk"}: st,hard=self._st_topk(mat)
-                else:
-                    idx=mat.topk(min(self.topk,len(tgts)),dim=1).indices; hard=torch.zeros_like(mat).scatter_(1,idx,1.); st=hard
-                for j,tgt in enumerate(tgts): weights[(src,tgt)]=st[:,j]; hard_masks[(src,tgt)]=hard[:,j].bool()
+            mat=torch.stack([scores[p] for p in pairs],1); valid=mat>-1e3
+            if self.mode in {"contrastive_topk","directed_topk"}: st,hard=self._st_topk(mat,valid)
+            else:
+                k=min(self.topk,len(pairs)); idx=mat.topk(k,dim=1).indices; hard=torch.zeros_like(mat).scatter_(1,idx,1.)*valid.float(); st=hard
+            for j,p in enumerate(pairs): weights[p]=st[:,j]; hard_masks[p]=hard[:,j].bool()
         elif self.mode!="late": raise ValueError(f"Unknown fusion mode {self.mode}")
         return weights,hard_masks
 
