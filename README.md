@@ -8,14 +8,16 @@ PyTorch research framework for **trainable, sparse, directed and sample-dependen
 modality x_m
     -> modality-specific pretrained encoder E_m
     -> projection adapter to shared d_model
-    -> directed sample-dependent selector
+    -> global directed sample-dependent selector
     -> sparse cross-modal attention
     -> multimodal task head
 ```
 
 For modalities `A` and `B`, `A -> B` and `B -> A` are distinct interactions. Separate source and target projections make directional scores asymmetric. For `src -> tgt`, target tokens query source tokens and source information enriches the target representation.
 
-`directed_topk` and `contrastive_topk` use hard top-k routing in the forward pass with a straight-through Gumbel/softmax estimator during training. `contrastive_topk` additionally uses symmetric InfoNCE between modality representations:
+The sparse selector uses a **global directed interaction budget K**. For every sample it scores all available `M(M-1)` directed source-target pairs and selects the global top-K edges. The budget is deliberately not divided equally among source modalities: an informative modality may receive multiple outgoing interactions while another may receive none.
+
+`directed_topk` and `contrastive_topk` use hard global top-K routing in the forward pass with a straight-through Gumbel/softmax estimator during training. `contrastive_topk` additionally uses symmetric InfoNCE between modality representations:
 
 ```text
 L = L_task + lambda_c * L_contrastive
@@ -33,12 +35,12 @@ Specialist encoders (e.g. EEG, IMU, skeleton, audio, video) can either be wrappe
 
 - `late` — pooled late fusion, no cross-modal attention
 - `full` — exhaustive directed pairwise cross-attention
-- `random_topk` — random `k` outgoing edges per source
-- `similarity_topk` — cosine-similarity sparse baseline
-- `directed_topk` — trainable asymmetric selector, task loss only
-- `contrastive_topk` — same selector + contrastive objective
+- `random_topk` — random global K directed edges
+- `similarity_topk` — global cosine-similarity sparse baseline
+- `directed_topk` — trainable asymmetric global selector, task loss only
+- `contrastive_topk` — same global selector + contrastive objective
 
-With `M` modalities, full directed fusion has `M(M-1)` interactions; top-k routing keeps at most `M*k`.
+With `M` modalities, full directed fusion has `M(M-1)` interactions; sparse routing keeps a global budget of `K` interactions. The retained interaction fraction is therefore `K / [M(M-1)]`. `K` is configured with `model.topk`; publication experiments should sweep multiple budgets (for example K=2,3,4 where feasible) rather than assume one operating point.
 
 ## Dataset-agnostic design
 
@@ -73,6 +75,7 @@ Copy `configs/generic.yaml`, set the cache/task, and define an encoder per modal
 ```yaml
 model:
   d_model: 128
+  topk: 3  # global K across all directed pairs
   encoders:
     rgb:
       type: timm
@@ -99,7 +102,7 @@ Samples carry modality-presence masks; training can additionally simulate missin
 
 ## Evaluation
 
-Classification and fixed-shape regression are supported. Subject-independent evaluation is recommended. `scripts/run_loso_utd.py` is the current LOSO example. The model exposes per-sample `hard_masks`, directional scores, reliability values and selected-pair counts for routing analysis.
+Classification and fixed-shape regression are supported. Subject-independent evaluation is recommended. `scripts/run_loso_utd.py` is the current LOSO example. The model exposes per-sample `hard_masks`, directional scores, reliability values and selected-pair counts for routing analysis. Report both task performance and the interaction budget/fraction; for global sparse routing, compare multiple K values against full fusion.
 
 ## Dataset notes
 
@@ -111,7 +114,7 @@ For UTD-MHAD, the intended publication experiment is RGB + Depth + Skeleton + In
 configs/                    experiment + encoder configurations
 scripts/                    CLI entry points
 src/cmf/models/encoders.py  pretrained encoder registry + adapters
-src/cmf/models/fusion.py    directed sparse fusion
+src/cmf/models/fusion.py    global directed sparse fusion
 src/cmf/datasets/           dataset adapters/common cache
 src/cmf/train.py            dataset-agnostic training
 docs/ENCODERS.md            pretrained encoder contract
@@ -119,7 +122,3 @@ docs/CUSTOM_DATASETS.md     new-dataset specification
 examples/                   adapter templates
 tests/                      smoke tests
 ```
-
-## Research status
-
-Active research code. Existing UTD-MHAD 3-stream results are architecture-validation experiments, not final benchmark claims. Publication experiments should use genuinely heterogeneous modalities, strong unimodal encoders, identical backbones across fusion baselines, multiple seeds/folds and controlled reliability diagnostics.
