@@ -39,18 +39,22 @@ model:
   # Strong pretrained/fold-trained encoders and FACE embeddings are configured
   # in the next extraction stage to keep LOSO leakage under control.
   encoders:
-    eeg:
-      type: timeseries
-      input_dim: 32
-    eda:
-      type: timeseries
-      input_dim: 1
-    ppg:
-      type: timeseries
-      input_dim: 1
-    temp:
-      type: timeseries
-      input_dim: 1
+    eeg:\n      type: eegnet\n      f1: 8\n      depth_multiplier: 2\n      kernel: 64\n      dropout: 0.25
+    eda:\n      type: physio_cnn1d\n      channels: [32, 64, 96]\n      kernel: 7\n      dropout: 0.2
+    ppg:\n      type: physio_cnn1d\n      channels: [32, 64, 96]\n      kernel: 7\n      dropout: 0.2
+    temp:\n      type: physio_cnn1d\n      channels: [32, 64, 96]\n      kernel: 7\n      dropout: 0.2
+
+pretraining:
+  enabled: true
+  modalities: [eeg, eda, ppg, temp]
+  epochs: 30\n  patience: 5
+  patience: 5
+  batch_size: 64
+  workers: 0
+  lr: 0.001
+  weight_decay: 0.0001
+  cpu: false
+  freeze_for_fusion: true
 
 training:
   epochs: 30
