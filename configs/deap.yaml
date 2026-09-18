@@ -18,6 +18,12 @@ dataset:
   window_seconds: 10
   stride_seconds: 5
 
+loso:
+  enabled: true
+  subject_column: subject
+  validation_strategy: previous_subject
+  test_subject: s32
+
 model:
   d_model: 128
   heads: 4
