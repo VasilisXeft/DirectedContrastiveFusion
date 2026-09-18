@@ -2,7 +2,7 @@ import itertools
 import torch
 from torch import nn
 import torch.nn.functional as F
-from cmf.models.encoders import build_encoder
+from cmf.models.encoders import build_encoder, load_pretrained_encoder
 
 
 class ContrastiveSparseFusion(nn.Module):
@@ -15,10 +15,11 @@ class ContrastiveSparseFusion(nn.Module):
     """
     def __init__(self, modality_shapes, num_outputs, task="classification", d_model=128, heads=4,
                  topk=3, mode="contrastive_topk", temperature=0.1, reliability=True,
-                 selector_temperature=0.7, gumbel=True, encoder_configs=None):
+                 selector_temperature=0.7, gumbel=True, encoder_configs=None, encoder_checkpoints=None, freeze_pretrained=True):
         super().__init__(); self.names=list(modality_shapes); self.mode=mode; self.topk=int(topk); self.temperature=float(temperature); self.selector_temperature=float(selector_temperature); self.use_gumbel=bool(gumbel); self.task=task
         encoder_configs=encoder_configs or {}
-        self.encoders=nn.ModuleDict({n:build_encoder(n,shape,d_model,encoder_configs.get(n,{})) for n,shape in modality_shapes.items()})
+        encoder_checkpoints=encoder_checkpoints or {}
+        self.encoders=nn.ModuleDict({n:(load_pretrained_encoder(n,shape,d_model,encoder_configs.get(n,{}),encoder_checkpoints[n],freeze_pretrained) if n in encoder_checkpoints else build_encoder(n,shape,d_model,encoder_configs.get(n,{}))) for n,shape in modality_shapes.items()})
         self.projectors=nn.ModuleDict({n:nn.Sequential(nn.Linear(d_model,d_model),nn.GELU(),nn.Linear(d_model,d_model)) for n in self.names})
         self.src_selector=nn.ModuleDict({n:nn.Linear(d_model,d_model,bias=False) for n in self.names}); self.tgt_selector=nn.ModuleDict({n:nn.Linear(d_model,d_model,bias=False) for n in self.names})
         self.reliability=nn.ModuleDict({n:nn.Linear(d_model,1) for n in self.names}) if reliability else None
