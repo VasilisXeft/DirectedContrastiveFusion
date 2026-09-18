@@ -138,3 +138,13 @@ def build_encoder(name, shape, d_model, cfg=None):
     if typ=="timm": return TimmEncoder(cfg["name"],d_model,cfg.get("pretrained",True),cfg.get("freeze",False),cfg.get("in_chans",shape[1] if len(shape)==4 else 3))
     if typ=="huggingface": return HuggingFaceEncoder(cfg["name"],d_model,cfg.get("freeze",False))
     raise ValueError(f"Unknown encoder type '{typ}' for modality '{name}'")
+
+
+def load_pretrained_encoder(name, shape, d_model, cfg, checkpoint, freeze=True, device="cpu"):
+    """Build an encoder, load a fold-specific unimodal checkpoint, optionally freeze it."""
+    enc=build_encoder(name,shape,d_model,cfg)
+    state=torch.load(checkpoint,map_location=device)
+    enc.load_state_dict(state["encoder"])
+    if freeze:
+        for p in enc.parameters(): p.requires_grad=False
+    return enc
