@@ -36,12 +36,18 @@ def pretrain_fold(config_path, splits, test_subject, val_subject):
     item=train_ds[0]; shapes={n:tuple(x.shape) for n,x in item["modalities"].items()}
     modalities=pcfg.get("modalities",list(shapes)); outroot=ensure_dir(Path(cfg.get("output_dir","runs"))/dcfg["name"]/"unimodal_pretrain"/f"test_{test_subject}_val_{val_subject}")
     results={}
+    reuse=bool(pcfg.get("reuse_checkpoints",True))
     for modality in modalities:
+        path=outroot/f"{modality}.pt"
+        if reuse and path.exists():
+            print(f"{modality}: reusing {path}")
+            results[modality]={"checkpoint":str(path),"reused":True}
+            continue
         model=UnimodalClassifier(modality,shapes[modality],mcfg["encoders"][modality],mcfg.get("d_model",128),dcfg["num_classes"]).to(device)
         tr=DataLoader(train_ds,batch_size=pcfg.get("batch_size",64),shuffle=True,num_workers=pcfg.get("workers",0),collate_fn=collate_multimodal)
         va=DataLoader(val_ds,batch_size=pcfg.get("batch_size",64),shuffle=False,num_workers=pcfg.get("workers",0),collate_fn=collate_multimodal)
         opt=torch.optim.AdamW(model.parameters(),lr=float(pcfg.get("lr",1e-3)),weight_decay=float(pcfg.get("weight_decay",1e-4)))
-        patience=int(pcfg.get("patience",5)); best=float("inf"); bad=0; hist=[]; path=outroot/f"{modality}.pt"
+        patience=int(pcfg.get("patience",5)); best=float("inf"); bad=0; hist=[]
         for epoch in range(1,int(pcfg.get("epochs",30))+1):
             model.train(); ls=[]; start=time.time()
             for b in tr:
