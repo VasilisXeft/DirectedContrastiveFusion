@@ -5,6 +5,7 @@ import pandas as pd
 
 from cmf.config import load_config
 from cmf.train import train_from_config
+from cmf.pretrain import pretrain_fold
 from cmf.utils.io import ensure_dir
 
 
@@ -64,8 +65,13 @@ def run_loso(config_path, subject=None, run_all=False, mode=None):
         splits = _fold_manifests(manifest, test_subject, val_subject, subject_column)
         print(f"LOSO fold: test={test_subject} val={val_subject} train_subjects={len(subjects)-2} "
               f"samples(train/val/test)={len(splits['train'])}/{len(splits['val'])}/{len(splits['test'])}")
+        encoder_checkpoints = None
+        if cfg.get("pretraining", {}).get("enabled", False):
+            pre = pretrain_fold(config_path, splits, test_subject, val_subject)
+            encoder_checkpoints = {m: info["checkpoint"] for m, info in pre.items()}
         res = train_from_config(config_path, mode=mode, split_manifests=splits,
-                                run_name=f"test_{test_subject}_val_{val_subject}", return_metrics=True)
+                                run_name=f"test_{test_subject}_val_{val_subject}", return_metrics=True,
+                                encoder_checkpoints=encoder_checkpoints)
         results.append({"test_subject": test_subject, "val_subject": val_subject, **res})
 
     if run_all:
