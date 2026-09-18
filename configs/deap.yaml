@@ -3,17 +3,13 @@ output_dir: runs
 
 dataset:
   name: deap
-
-  # Set these paths on the machine that owns the DEAP data.
   data_path: "C:/Users/vxefteris/Desktop/D/MindSpaces/DEAP Dataset/data_preprocessed_python/data_preprocessed_python"
   video_path: "C:/Users/vxefteris/Desktop/D/MindSpaces/DEAP Dataset/face_video"
   cache_dir: "data/processed/deap"
-
   task: classification
   num_classes: 2
   label: valence
   binary_threshold: 5.0
-
   baseline_seconds: 3
   window_seconds: 10
   stride_seconds: 5
@@ -34,20 +30,33 @@ model:
   gumbel: true
   reliability: true
   contrastive_weight: 0.005
-
-  # DEAP preprocessing initially caches the four physiological modalities.
-  # Strong pretrained/fold-trained encoders and FACE embeddings are configured
-  # in the next extraction stage to keep LOSO leakage under control.
   encoders:
-    eeg:\n      type: eegnet\n      f1: 8\n      depth_multiplier: 2\n      kernel: 64\n      dropout: 0.25
-    eda:\n      type: physio_cnn1d\n      channels: [32, 64, 96]\n      kernel: 7\n      dropout: 0.2
-    ppg:\n      type: physio_cnn1d\n      channels: [32, 64, 96]\n      kernel: 7\n      dropout: 0.2
-    temp:\n      type: physio_cnn1d\n      channels: [32, 64, 96]\n      kernel: 7\n      dropout: 0.2
+    eeg:
+      type: eegnet
+      f1: 8
+      depth_multiplier: 2
+      kernel: 64
+      dropout: 0.25
+    eda:
+      type: physio_cnn1d
+      channels: [32, 64, 96]
+      kernel: 7
+      dropout: 0.2
+    ppg:
+      type: physio_cnn1d
+      channels: [32, 64, 96]
+      kernel: 7
+      dropout: 0.2
+    temp:
+      type: physio_cnn1d
+      channels: [32, 64, 96]
+      kernel: 7
+      dropout: 0.2
 
 pretraining:
   enabled: true
   modalities: [eeg, eda, ppg, temp]
-  epochs: 30\n  patience: 5
+  epochs: 30
   patience: 5
   batch_size: 64
   workers: 0
@@ -58,6 +67,7 @@ pretraining:
 
 training:
   epochs: 30
+  patience: 5
   batch_size: 32
   workers: 0
   lr: 0.0003
