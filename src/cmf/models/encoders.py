@@ -88,7 +88,7 @@ class HuggingFaceEncoder(nn.Module):
 def build_encoder(name, shape, d_model, cfg=None):
     """Build a modality encoder from YAML configuration."""
     cfg=cfg or {}; typ=cfg.get("type","auto")
-    if typ in {"auto","generic"}:
+    if typ in {"auto","generic","generic_sequence"}:
         return ImageSequenceEncoder(shape[1],d_model) if len(shape)==4 else TimeSeriesEncoder(shape[-1],d_model)
     if typ=="timeseries": return TimeSeriesEncoder(shape[-1],d_model)
     if typ=="image_cnn": return ImageSequenceEncoder(cfg.get("in_ch",shape[1]),d_model)
