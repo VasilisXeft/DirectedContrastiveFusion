@@ -2,7 +2,7 @@ from pathlib import Path
 import pickle
 import numpy as np
 
-from cmf.utils.io import save_sample
+from cmf.utils.io import save_npz
 
 
 EEG_CHANNELS = slice(0, 32)
@@ -90,7 +90,7 @@ def preprocess_deap(cfg):
                     "missing_modalities": [],
                 }
                 fname = f"sample_{sample_id:06d}.npz"
-                save_sample(out / fname, mods, y, meta)
+                save_npz(out / fname, mods, y, meta)
                 rows.append((fname, subject))
                 sample_id += 1
 
