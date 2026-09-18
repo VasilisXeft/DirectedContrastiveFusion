@@ -77,10 +77,13 @@ def sample_image_volume(x, n_frames=16, image_size=112):
 
 
 class CachedMultimodalDataset(Dataset):
-    def __init__(self, cache_dir, split="train", modality_dropout=0.0):
+    def __init__(self, cache_dir, split="train", modality_dropout=0.0, manifest=None):
         self.cache_dir = Path(cache_dir)
-        self.manifest = pd.read_csv(self.cache_dir / "manifest.csv")
-        self.manifest = self.manifest[self.manifest["split"] == split].reset_index(drop=True)
+        self.manifest = pd.read_csv(self.cache_dir / "manifest.csv") if manifest is None else manifest.copy()
+        if split is not None:
+            self.manifest = self.manifest[self.manifest["split"] == split].reset_index(drop=True)
+        else:
+            self.manifest = self.manifest.reset_index(drop=True)
         self.modality_dropout = float(modality_dropout)
         if len(self.manifest) == 0:
             raise ValueError(f"No samples for split={split} in {self.cache_dir / 'manifest.csv'}")
