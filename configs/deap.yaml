@@ -1,0 +1,56 @@
+seed: 42
+output_dir: runs
+
+dataset:
+  name: deap
+
+  # Set these paths on the machine that owns the DEAP data.
+  data_path: "C:/path/to/DEAP/data_preprocessed_python"
+  video_path: "C:/path/to/DEAP/face_video"
+  cache_dir: "data/processed/deap"
+
+  task: classification
+  num_classes: 2
+  label: valence
+  binary_threshold: 5.0
+
+  baseline_seconds: 3
+  window_seconds: 10
+  stride_seconds: 5
+
+model:
+  d_model: 128
+  heads: 4
+  mode: directed_topk
+  topk: 6
+  temperature: 0.1
+  selector_temperature: 0.7
+  gumbel: true
+  reliability: true
+  contrastive_weight: 0.005
+
+  # DEAP preprocessing initially caches the four physiological modalities.
+  # Strong pretrained/fold-trained encoders and FACE embeddings are configured
+  # in the next extraction stage to keep LOSO leakage under control.
+  encoders:
+    eeg:
+      type: generic_sequence
+      input_dim: 32
+    eda:
+      type: generic_sequence
+      input_dim: 1
+    ppg:
+      type: generic_sequence
+      input_dim: 1
+    temp:
+      type: generic_sequence
+      input_dim: 1
+
+training:
+  epochs: 30
+  batch_size: 32
+  workers: 0
+  lr: 0.0003
+  weight_decay: 0.0001
+  modality_dropout: 0.0
+  cpu: false
