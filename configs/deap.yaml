@@ -5,8 +5,8 @@ dataset:
   name: deap
 
   # Set these paths on the machine that owns the DEAP data.
-  data_path: "C:/path/to/DEAP/data_preprocessed_python"
-  video_path: "C:/path/to/DEAP/face_video"
+  data_path: "C:/Users/vxefteris/Desktop/D/MindSpaces/DEAP Dataset/data_preprocessed_python/data_preprocessed_python"
+  video_path: "C:/Users/vxefteris/Desktop/D/MindSpaces/DEAP Dataset/face_video"
   cache_dir: "data/processed/deap"
 
   task: classification
