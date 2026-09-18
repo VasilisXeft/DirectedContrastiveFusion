@@ -18,6 +18,45 @@ class TimeSeriesEncoder(nn.Module):
         return self.net(x)
 
 
+
+class EEGNetEncoder(nn.Module):
+    """EEGNet-style encoder for inputs [B,T,C], returning temporal tokens [B,T',D]."""
+    def __init__(self, chans, d_model=128, f1=8, depth_multiplier=2, kernel=64, dropout=0.25):
+        super().__init__()
+        f2=f1*depth_multiplier
+        self.temporal=nn.Sequential(
+            nn.Conv2d(1,f1,(1,kernel),padding=(0,kernel//2),bias=False),
+            nn.BatchNorm2d(f1))
+        self.spatial=nn.Sequential(
+            nn.Conv2d(f1,f2,(chans,1),groups=f1,bias=False),
+            nn.BatchNorm2d(f2),nn.ELU(),nn.AvgPool2d((1,4)),nn.Dropout(dropout))
+        self.separable=nn.Sequential(
+            nn.Conv2d(f2,f2,(1,16),padding=(0,8),groups=f2,bias=False),
+            nn.Conv2d(f2,f2,(1,1),bias=False),nn.BatchNorm2d(f2),nn.ELU(),
+            nn.AvgPool2d((1,8)),nn.Dropout(dropout))
+        self.proj=nn.Linear(f2,d_model)
+    def forward(self,x):
+        # cached DEAP EEG is [B,T,C]
+        x=x.transpose(1,2).unsqueeze(1)
+        y=self.separable(self.spatial(self.temporal(x))).squeeze(2).transpose(1,2)
+        return self.proj(y)
+
+
+class Physio1DCNNEncoder(nn.Module):
+    """Compact modality-specific 1D CNN for PPG/EDA/TEMP-like signals."""
+    def __init__(self, in_dim=1, d_model=128, channels=(32,64,96), kernel=7, dropout=0.2):
+        super().__init__()
+        layers=[]; cin=in_dim
+        for cout in channels:
+            layers += [nn.Conv1d(cin,cout,kernel,padding=kernel//2,bias=False),
+                       nn.BatchNorm1d(cout),nn.GELU(),nn.MaxPool1d(2),nn.Dropout(dropout)]
+            cin=cout
+        self.net=nn.Sequential(*layers); self.proj=nn.Linear(cin,d_model)
+    def forward(self,x):
+        y=self.net(x.transpose(1,2)).transpose(1,2)
+        return self.proj(y)
+
+
 class ImageSequenceEncoder(nn.Module):
     def __init__(self, in_ch=3, d_model=128):
         super().__init__()
@@ -91,6 +130,8 @@ def build_encoder(name, shape, d_model, cfg=None):
     if typ in {"auto","generic","generic_sequence"}:
         return ImageSequenceEncoder(shape[1],d_model) if len(shape)==4 else TimeSeriesEncoder(shape[-1],d_model)
     if typ=="timeseries": return TimeSeriesEncoder(shape[-1],d_model)
+    if typ=="eegnet": return EEGNetEncoder(shape[-1],d_model,cfg.get("f1",8),cfg.get("depth_multiplier",2),cfg.get("kernel",64),cfg.get("dropout",.25))
+    if typ=="physio_cnn1d": return Physio1DCNNEncoder(shape[-1],d_model,tuple(cfg.get("channels",[32,64,96])),cfg.get("kernel",7),cfg.get("dropout",.2))
     if typ=="image_cnn": return ImageSequenceEncoder(cfg.get("in_ch",shape[1]),d_model)
     if typ=="precomputed": return PrecomputedEncoder(cfg.get("feature_dim",shape[-1]),d_model)
     if typ=="torchvision": return TorchvisionImageEncoder(cfg["name"],d_model,cfg.get("weights","DEFAULT"),cfg.get("freeze",False))
