@@ -64,6 +64,7 @@ pretraining:
   weight_decay: 0.0001
   cpu: false
   freeze_for_fusion: true
+  reuse_checkpoints: true
 
 training:
   epochs: 30
