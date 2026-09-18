@@ -36,7 +36,15 @@ def train_from_config(config_path,mode=None,split_manifests=None,run_name=None,r
     train_ds=CachedMultimodalDataset(cache,"train",tcfg.get("modality_dropout",0.),train_manifest); val_ds=CachedMultimodalDataset(cache,"val",0,val_manifest); shapes,target_shape=infer_shapes(train_ds)
     if task=="classification":
         import pandas as pd
-        man=pd.read_csv(cache/"manifest.csv"); num_outputs=int(dcfg.get("num_classes",man.label.max()+1))
+        man=pd.read_csv(cache/"manifest.csv")
+        if "num_classes" in dcfg:
+            num_outputs=int(dcfg["num_classes"])
+        elif "label" in man.columns:
+            num_outputs=int(man["label"].max()+1)
+        else:
+            # Targets are stored inside the cached NPZ files; infer classes from the dataset when the manifest has no label column.
+            labels=[int(train_ds[i]["target"].view(-1)[0].item()) for i in range(len(train_ds))]
+            num_outputs=int(max(labels)+1)
     else: num_outputs=int(np.prod(target_shape))
     model=ContrastiveSparseFusion(shapes,num_outputs,task,d_model=mcfg.get("d_model",128),heads=mcfg.get("heads",4),topk=mcfg.get("topk",1),mode=mode or mcfg.get("mode","contrastive_topk"),temperature=mcfg.get("temperature",.1),reliability=mcfg.get("reliability",True),selector_temperature=mcfg.get("selector_temperature",.7),gumbel=mcfg.get("gumbel",True),encoder_configs=mcfg.get("encoders",{}))
     device=torch.device("cuda" if torch.cuda.is_available() and not tcfg.get("cpu",False) else "cpu"); model.to(device); train_loader=DataLoader(train_ds,batch_size=tcfg.get("batch_size",16),shuffle=True,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal); val_loader=DataLoader(val_ds,batch_size=tcfg.get("batch_size",16),shuffle=False,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal)
