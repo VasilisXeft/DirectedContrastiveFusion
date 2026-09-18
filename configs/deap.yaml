@@ -40,16 +40,16 @@ model:
   # in the next extraction stage to keep LOSO leakage under control.
   encoders:
     eeg:
-      type: generic_sequence
+      type: timeseries
       input_dim: 32
     eda:
-      type: generic_sequence
+      type: timeseries
       input_dim: 1
     ppg:
-      type: generic_sequence
+      type: timeseries
       input_dim: 1
     temp:
-      type: generic_sequence
+      type: timeseries
       input_dim: 1
 
 training:
