@@ -26,7 +26,7 @@ def _fold_manifests(manifest, test_subject, val_subject, subject_column):
     return {"train": train, "val": val, "test": test}
 
 
-def run_loso(config_path, subject=None, run_all=False, mode=None):
+def run_loso(config_path, subject=None, run_all=False, mode=None, topk=None, seed=None, experiment_name=None):
     cfg = load_config(config_path)
     dcfg = cfg["dataset"]
     lcfg = cfg.get("loso", {})
@@ -70,13 +70,13 @@ def run_loso(config_path, subject=None, run_all=False, mode=None):
             pre = pretrain_fold(config_path, splits, test_subject, val_subject)
             encoder_checkpoints = {m: info["checkpoint"] for m, info in pre.items()}
         res = train_from_config(config_path, mode=mode, split_manifests=splits,
-                                run_name=f"test_{test_subject}_val_{val_subject}", return_metrics=True,
-                                encoder_checkpoints=encoder_checkpoints)
+                                run_name=(f"{experiment_name}/" if experiment_name else "") + f"test_{test_subject}_val_{val_subject}", return_metrics=True,
+                                encoder_checkpoints=encoder_checkpoints, topk=topk, seed=seed)
         results.append({"test_subject": test_subject, "val_subject": val_subject, **res})
 
     if run_all:
         task = dcfg.get("task", "classification")
-        summary = {"config": str(config_path), "mode": mode or cfg["model"].get("mode"), "folds": results}
+        summary = {"config": str(config_path), "mode": mode or cfg["model"].get("mode"), "topk": topk, "seed": seed, "experiment_name": experiment_name, "folds": results}
         if task == "classification":
             for key in ("accuracy", "macro_f1"):
                 vals = [r["test"][key] for r in results]
@@ -85,6 +85,6 @@ def run_loso(config_path, subject=None, run_all=False, mode=None):
             vals = [r["test"]["rmse"] for r in results]
             summary["rmse"] = {"mean": float(np.mean(vals)), "std": float(np.std(vals, ddof=1))}
         out = ensure_dir(Path(cfg.get("output_dir", "runs")) / dcfg["name"] / "loso")
-        (out / f"{mode or cfg['model'].get('mode','model')}_summary.json").write_text(json.dumps(summary, indent=2))
+        (out / f"{experiment_name or (mode or cfg['model'].get('mode','model'))}_summary.json").write_text(json.dumps(summary, indent=2))
         print(json.dumps({k:v for k,v in summary.items() if k != "folds"}, indent=2))
     return results
