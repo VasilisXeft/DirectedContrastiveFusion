@@ -28,6 +28,25 @@ def evaluate(model,loader,device,task):
     if task=="classification": return {"loss":float(np.mean(losses)),"accuracy":accuracy_score(ys,ps),"macro_f1":f1_score(ys,ps,average="macro")}
     ys=np.concatenate(ys); ps=np.concatenate(ps); return {"loss":float(np.mean(losses)),"rmse":float(mean_squared_error(ys,ps)**.5)}
 
+def routing_diagnostics(model,loader,device):
+    """Aggregate hard directed-edge usage and learned reliability on a split."""
+    model.eval(); edge_counts={}; rel_sums={}; n=0; pair_sum=0.0
+    with torch.no_grad():
+        for batch in loader:
+            mods,present,_=move(batch,device); _,aux=model(mods,present)
+            b=next(iter(mods.values())).shape[0]; n+=b
+            pair_sum += float(aux["pair_count"].item())*b
+            for (src,tgt),mask in aux["hard_masks"].items():
+                key=f"{src}->{tgt}"; edge_counts[key]=edge_counts.get(key,0)+int(mask.sum().item())
+            for name,val in aux["reliability"].items():
+                rel_sums[name]=rel_sums.get(name,0.0)+float(val.sum().item())
+    return {
+        "samples":n,
+        "mean_selected_pairs":pair_sum/max(n,1),
+        "edge_selection_rate":{k:v/max(n,1) for k,v in sorted(edge_counts.items())},
+        "mean_reliability":{k:v/max(n,1) for k,v in sorted(rel_sums.items())},
+    }
+
 def train_from_config(config_path,mode=None,split_manifests=None,run_name=None,return_metrics=False,encoder_checkpoints=None,topk=None,seed=None):
     cfg=load_config(config_path); effective_seed=int(cfg.get("seed",42) if seed is None else seed); seed_everything(effective_seed); dcfg=cfg["dataset"]; tcfg=cfg["training"]; mcfg=cfg["model"]; cache=Path(dcfg["cache_dir"]); task=dcfg.get("task","classification")
     train_manifest = split_manifests.get("train") if split_manifests else None
@@ -75,6 +94,5 @@ def train_from_config(config_path,mode=None,split_manifests=None,run_name=None,r
     result={"outdir":str(outdir),"best_val":best_metrics,"seed":effective_seed,"topk":(mcfg.get("topk",1) if topk is None else int(topk))}
     if test_manifest is not None:
         test_ds=CachedMultimodalDataset(cache,"test",0,test_manifest); test_loader=DataLoader(test_ds,batch_size=tcfg.get("batch_size",16),shuffle=False,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal)
-        ckpt=torch.load(outdir/"best.pt",map_location=device); model.load_state_dict(ckpt["model"]); result["test"]=evaluate(model,test_loader,device,task)
-        (outdir/"metrics.json").write_text(json.dumps(result,indent=2))
+        ckpt=torch.load(outdir/"best.pt",map_location=device); model.load_state_dict(ckpt["model"]); result["test"]=evaluate(model,test_loader,device,task)\n        result["routing"]=routing_diagnostics(model,test_loader,device)\n        (outdir/"metrics.json").write_text(json.dumps(result,indent=2))
     return result if return_metrics else outdir
