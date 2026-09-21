@@ -9,7 +9,7 @@ from pathlib import Path
 import argparse, sys
 import numpy as np
 import torch
-from scipy.signal import resample_poly
+from scipy.signal import resample_poly, cheby2, filtfilt
 
 from cmf.config import load_config
 from cmf.datasets.common import CachedMultimodalDataset
@@ -33,9 +33,20 @@ def main():
 
     try:
         from models.resnet import ResNet1DMoE
-        from preprocessing.ppg import preprocess_one_ppg_signal
     except Exception as e:
-        raise SystemExit(f"Could not import official PaPaGei code: {e}") from e
+        raise SystemExit(f"Could not import official PaPaGei model code: {e}") from e
+
+    def papagei_ppg_preprocess(waveform, frequency, fL=0.5, fH=12.0, order=4, smooth_ms=50):
+        """Reproduce the PPG branch of PaPaGei's pyPPG preprocessing without legacy pyPPG dependencies."""
+        # pyPPG Preprocess.get_signals: Chebyshev-II bandpass, 20 dB stopband attenuation,
+        # zero-phase filtfilt, then 50 ms moving-average smoothing when fs >= 75 Hz.
+        b,a=cheby2(order,20,[fL,fH],btype="bandpass",fs=frequency)
+        ppg_cb2=filtfilt(b,a,np.asarray(waveform,dtype=np.float64))
+        if frequency >= 75:
+            win=round(frequency*smooth_ms/1000)
+            B=np.ones(win,dtype=np.float64)/win
+            return filtfilt(B,[1.0],ppg_cb2)
+        return ppg_cb2
 
     cfg=load_config(a.config)
     ds=CachedMultimodalDataset(Path(cfg["dataset"]["cache_dir"]),split="train",modality_dropout=0.0)
@@ -46,7 +57,7 @@ def main():
     print(f"Raw range: [{ppg.min():.6g}, {ppg.max():.6g}]")
 
     # Follow the official PaPaGei quick-start order: clean at original fs, then resample to 125 Hz.
-    cleaned, *_ = preprocess_one_ppg_signal(waveform=ppg, frequency=fs)
+    cleaned=papagei_ppg_preprocess(ppg,fs)
     cleaned=np.asarray(cleaned,dtype=np.float32).reshape(-1)
     x125=resample_poly(cleaned,target_fs,fs).astype(np.float32)
     expected=int(round(len(ppg)*target_fs/fs))
