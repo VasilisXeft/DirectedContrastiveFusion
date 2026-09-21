@@ -93,6 +93,11 @@ def train_from_config(config_path,mode=None,split_manifests=None,run_name=None,r
     (outdir/"history.json").write_text(json.dumps(history,indent=2))
     result={"outdir":str(outdir),"best_val":best_metrics,"seed":effective_seed,"topk":(mcfg.get("topk",1) if topk is None else int(topk))}
     if test_manifest is not None:
-        test_ds=CachedMultimodalDataset(cache,"test",0,test_manifest); test_loader=DataLoader(test_ds,batch_size=tcfg.get("batch_size",16),shuffle=False,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal)
-        ckpt=torch.load(outdir/"best.pt",map_location=device); model.load_state_dict(ckpt["model"]); result["test"]=evaluate(model,test_loader,device,task)\n        result["routing"]=routing_diagnostics(model,test_loader,device)\n        (outdir/"metrics.json").write_text(json.dumps(result,indent=2))
+        test_ds=CachedMultimodalDataset(cache,"test",0,test_manifest)
+        test_loader=DataLoader(test_ds,batch_size=tcfg.get("batch_size",16),shuffle=False,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal)
+        ckpt=torch.load(outdir/"best.pt",map_location=device)
+        model.load_state_dict(ckpt["model"])
+        result["test"]=evaluate(model,test_loader,device,task)
+        result["routing"]=routing_diagnostics(model,test_loader,device)
+        (outdir/"metrics.json").write_text(json.dumps(result,indent=2))
     return result if return_metrics else outdir
