@@ -56,12 +56,19 @@ def main():
     # the loaded model instead of hard-coding it.
     seq_len=int(model.config.seq_len)
     n=int(eda.numel())
-    if n > seq_len:
-        raise RuntimeError(f"EDA window ({n}) is longer than MOMENT context ({seq_len}).")
-    x=torch.zeros((1,1,seq_len),dtype=torch.float32)
-    mask=torch.zeros((1,seq_len),dtype=torch.long)
-    x[0,0,:n]=eda
-    mask[0,:n]=1
+    # MOMENT-1 uses a fixed 512-sample context. Preserve the full 10 s DEAP
+    # window by splitting it into contiguous chunks; only the final chunk is
+    # padded and masked. Each chunk is encoded independently with the same
+    # frozen pretrained model.
+    n_chunks=(n + seq_len - 1)//seq_len
+    x=torch.zeros((n_chunks,1,seq_len),dtype=torch.float32)
+    mask=torch.zeros((n_chunks,seq_len),dtype=torch.long)
+    for i in range(n_chunks):
+        start=i*seq_len
+        end=min(start+seq_len,n)
+        valid=end-start
+        x[i,0,:valid]=eda[start:end]
+        mask[i,:valid]=1
     x=x.to(device); mask=mask.to(device)
 
     print(f"MOMENT context: {seq_len}")
@@ -74,7 +81,12 @@ def main():
 
     e1=o1.embeddings
     e2=o2.embeddings
-    print(f"Embedding shape: {tuple(e1.shape)}")
+    print(f"Per-chunk embedding shape: {tuple(e1.shape)}")
+    # Length-weighted pooling gives one fixed representation for the original
+    # DEAP window without letting padded samples contribute.
+    w=mask.sum(dim=1).to(e1.dtype)
+    pooled=(e1*w[:,None]).sum(dim=0,keepdim=True)/w.sum()
+    print(f"Window pooled embedding shape: {tuple(pooled.shape)}")
     print(f"Embedding finite: {bool(torch.isfinite(e1).all())}")
     diff=(e1-e2).abs().max().item()
     print(f"Repeat max abs difference: {diff:.8g}")
