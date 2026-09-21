@@ -28,8 +28,8 @@ def evaluate(model,loader,device,task):
     if task=="classification": return {"loss":float(np.mean(losses)),"accuracy":accuracy_score(ys,ps),"macro_f1":f1_score(ys,ps,average="macro")}
     ys=np.concatenate(ys); ps=np.concatenate(ps); return {"loss":float(np.mean(losses)),"rmse":float(mean_squared_error(ys,ps)**.5)}
 
-def train_from_config(config_path,mode=None,split_manifests=None,run_name=None,return_metrics=False,encoder_checkpoints=None):
-    cfg=load_config(config_path); seed_everything(cfg.get("seed",42)); dcfg=cfg["dataset"]; tcfg=cfg["training"]; mcfg=cfg["model"]; cache=Path(dcfg["cache_dir"]); task=dcfg.get("task","classification")
+def train_from_config(config_path,mode=None,split_manifests=None,run_name=None,return_metrics=False,encoder_checkpoints=None,topk=None,seed=None):
+    cfg=load_config(config_path); effective_seed=int(cfg.get("seed",42) if seed is None else seed); seed_everything(effective_seed); dcfg=cfg["dataset"]; tcfg=cfg["training"]; mcfg=cfg["model"]; cache=Path(dcfg["cache_dir"]); task=dcfg.get("task","classification")
     train_manifest = split_manifests.get("train") if split_manifests else None
     val_manifest = split_manifests.get("val") if split_manifests else None
     test_manifest = split_manifests.get("test") if split_manifests else None
@@ -53,7 +53,7 @@ def train_from_config(config_path,mode=None,split_manifests=None,run_name=None,r
         print(f"Fusion class weights: {class_weights.tolist()}")
     else:
         num_outputs=int(np.prod(target_shape)); class_weights=None
-    model=ContrastiveSparseFusion(shapes,num_outputs,task,d_model=mcfg.get("d_model",128),heads=mcfg.get("heads",4),topk=mcfg.get("topk",1),mode=mode or mcfg.get("mode","contrastive_topk"),temperature=mcfg.get("temperature",.1),reliability=mcfg.get("reliability",True),selector_temperature=mcfg.get("selector_temperature",.7),gumbel=mcfg.get("gumbel",True),encoder_configs=mcfg.get("encoders",{}),encoder_checkpoints=encoder_checkpoints,freeze_pretrained=cfg.get("pretraining",{}).get("freeze_for_fusion",True))
+    model=ContrastiveSparseFusion(shapes,num_outputs,task,d_model=mcfg.get("d_model",128),heads=mcfg.get("heads",4),topk=(mcfg.get("topk",1) if topk is None else int(topk)),mode=mode or mcfg.get("mode","contrastive_topk"),temperature=mcfg.get("temperature",.1),reliability=mcfg.get("reliability",True),selector_temperature=mcfg.get("selector_temperature",.7),gumbel=mcfg.get("gumbel",True),encoder_configs=mcfg.get("encoders",{}),encoder_checkpoints=encoder_checkpoints,freeze_pretrained=cfg.get("pretraining",{}).get("freeze_for_fusion",True))
     device=torch.device("cuda" if torch.cuda.is_available() and not tcfg.get("cpu",False) else "cpu"); model.to(device); class_weights=class_weights.to(device) if class_weights is not None else None; train_loader=DataLoader(train_ds,batch_size=tcfg.get("batch_size",16),shuffle=True,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal); val_loader=DataLoader(val_ds,batch_size=tcfg.get("batch_size",16),shuffle=False,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal)
     opt=torch.optim.AdamW(model.parameters(),lr=float(tcfg.get("lr",3e-4)),weight_decay=float(tcfg.get("weight_decay",1e-4))); outdir=Path(cfg.get("output_dir","runs"))/dcfg["name"]/(mode or mcfg.get("mode","contrastive_topk"))
     if run_name: outdir=outdir/run_name
@@ -72,7 +72,7 @@ def train_from_config(config_path,mode=None,split_manifests=None,run_name=None,r
                 print(f"Early stopping at epoch {epoch}; best validation {'macro-F1' if task=='classification' else 'loss'}={best:.6f}")
                 break
     (outdir/"history.json").write_text(json.dumps(history,indent=2))
-    result={"outdir":str(outdir),"best_val":best_metrics}
+    result={"outdir":str(outdir),"best_val":best_metrics,"seed":effective_seed,"topk":(mcfg.get("topk",1) if topk is None else int(topk))}
     if test_manifest is not None:
         test_ds=CachedMultimodalDataset(cache,"test",0,test_manifest); test_loader=DataLoader(test_ds,batch_size=tcfg.get("batch_size",16),shuffle=False,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal)
         ckpt=torch.load(outdir/"best.pt",map_location=device); model.load_state_dict(ckpt["model"]); result["test"]=evaluate(model,test_loader,device,task)
