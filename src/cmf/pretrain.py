@@ -29,12 +29,24 @@ def _eval(model, loader, device, modality):
     return {"loss":float(np.mean(losses)),"accuracy":accuracy_score(ys,ps),"macro_f1":f1_score(ys,ps,average="macro")}
 
 
+def _class_weights(dataset, num_classes):
+    labels=np.asarray([int(dataset[i]["target"].view(-1)[0].item()) for i in range(len(dataset))],dtype=np.int64)
+    counts=np.bincount(labels,minlength=num_classes)
+    if np.any(counts==0): raise ValueError(f"Training split has an empty class: counts={counts.tolist()}")
+    weights=len(labels)/(num_classes*counts.astype(np.float64))
+    return counts, torch.tensor(weights,dtype=torch.float32)
+
+
 def pretrain_fold(config_path, splits, test_subject, val_subject):
     cfg=load_config(config_path); seed_everything(cfg.get("seed",42)); dcfg=cfg["dataset"]; pcfg=cfg["pretraining"]; mcfg=cfg["model"]
     cache=Path(dcfg["cache_dir"]); device=torch.device("cuda" if torch.cuda.is_available() and not pcfg.get("cpu",False) else "cpu")
     train_ds=CachedMultimodalDataset(cache,"train",0,splits["train"]); val_ds=CachedMultimodalDataset(cache,"val",0,splits["val"])
     item=train_ds[0]; shapes={n:tuple(x.shape) for n,x in item["modalities"].items()}
-    modalities=pcfg.get("modalities",list(shapes)); outroot=ensure_dir(Path(cfg.get("output_dir","runs"))/dcfg["name"]/"unimodal_pretrain"/f"test_{test_subject}_val_{val_subject}")
+    modalities=pcfg.get("modalities",list(shapes)); counts,class_weights=_class_weights(train_ds,int(dcfg["num_classes"]))
+    print(f"Training class distribution: {counts.tolist()}")
+    print(f"Class weights: {class_weights.tolist()}")
+    class_weights=class_weights.to(device)
+    outroot=ensure_dir(Path(cfg.get("output_dir","runs"))/dcfg["name"]/"unimodal_pretrain"/f"test_{test_subject}_val_{val_subject}")
     results={}
     reuse=bool(pcfg.get("reuse_checkpoints",True))
     for modality in modalities:
@@ -47,17 +59,17 @@ def pretrain_fold(config_path, splits, test_subject, val_subject):
         tr=DataLoader(train_ds,batch_size=pcfg.get("batch_size",64),shuffle=True,num_workers=pcfg.get("workers",0),collate_fn=collate_multimodal)
         va=DataLoader(val_ds,batch_size=pcfg.get("batch_size",64),shuffle=False,num_workers=pcfg.get("workers",0),collate_fn=collate_multimodal)
         opt=torch.optim.AdamW(model.parameters(),lr=float(pcfg.get("lr",1e-3)),weight_decay=float(pcfg.get("weight_decay",1e-4)))
-        patience=int(pcfg.get("patience",5)); best=float("inf"); bad=0; hist=[]
+        patience=int(pcfg.get("patience",5)); best=-float("inf"); bad=0; hist=[]
         for epoch in range(1,int(pcfg.get("epochs",30))+1):
             model.train(); ls=[]; start=time.time()
             for b in tr:
                 x=b["modalities"][modality].to(device); y=b["target"].long().view(-1).to(device)
-                p=model(x); loss=nn.functional.cross_entropy(p,y); opt.zero_grad(); loss.backward(); nn.utils.clip_grad_norm_(model.parameters(),5.); opt.step(); ls.append(loss.item())
+                p=model(x); loss=nn.functional.cross_entropy(p,y,weight=class_weights); opt.zero_grad(); loss.backward(); nn.utils.clip_grad_norm_(model.parameters(),5.); opt.step(); ls.append(loss.item())
             met=_eval(model,va,device,modality); rec={"epoch":epoch,"train_loss":float(np.mean(ls)),"seconds":time.time()-start,**met}; hist.append(rec); print(modality,rec)
-            if met["loss"] < best-1e-5:
-                best=met["loss"]; bad=0; torch.save({"encoder":model.encoder.state_dict(),"shape":shapes[modality],"encoder_cfg":mcfg["encoders"][modality],"d_model":mcfg.get("d_model",128)},path)
+            if met["macro_f1"] > best+1e-6:
+                best=met["macro_f1"]; bad=0; torch.save({"encoder":model.encoder.state_dict(),"shape":shapes[modality],"encoder_cfg":mcfg["encoders"][modality],"d_model":mcfg.get("d_model",128)},path)
             else:
                 bad+=1
                 if bad>=patience: print(f"{modality}: early stopping at epoch {epoch}"); break
-        results[modality]={"checkpoint":str(path),"best_val_loss":best,"history":hist}
+        results[modality]={"checkpoint":str(path),"best_val_macro_f1":best,"history":hist}
     (outroot/"summary.json").write_text(json.dumps(results,indent=2)); return results
