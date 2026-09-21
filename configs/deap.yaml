@@ -66,6 +66,13 @@ pretraining:
   freeze_for_fusion: true
   reuse_checkpoints: true
 
+embedding_cache:
+  enabled: true
+  cache_dir: data/features
+  batch_size: 128
+  workers: 0
+  cpu: false
+
 training:
   epochs: 30
   patience: 5
