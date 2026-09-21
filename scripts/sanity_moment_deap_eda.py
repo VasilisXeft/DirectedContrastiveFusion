@@ -25,8 +25,9 @@ def main():
         from momentfm import MOMENTPipeline
     except ImportError as e:
         raise SystemExit(
-            "MOMENT is not installed. Install it with:\n"
-            "  python -m pip install momentfm\n"
+            "MOMENT is not installed. The PyPI 0.1.4 release pins an old NumPy.\n"
+            "Install the current official GitHub package instead:\n"
+            "  python -m pip install --no-deps git+https://github.com/moment-timeseries-foundation-model/moment.git\n"
             "Then rerun this script."
         ) from e
 
