@@ -77,11 +77,11 @@ def crop_face(frame_bgr, detector, margin=0.18):
 
 
 def prep_faces(crops, input_shape):
-    # MobileNetV2 convention: RGB float in [-1, 1].
+    # EmotiEffLib AffectNet checkpoint: keep RGB float32 on original 0..255 scale.\n    # Verified on identical MediaPipe crops: normalized inputs collapse the 256-D features.
     h = input_shape[1] if len(input_shape) == 4 and input_shape[1] > 0 else 224
     w = input_shape[2] if len(input_shape) == 4 and input_shape[2] > 0 else 224
     arr=np.stack([cv2.resize(x,(w,h),interpolation=cv2.INTER_AREA) for x in crops]).astype(np.float32)
-    return arr/127.5 - 1.0
+    return arr
 
 
 def fill_missing(tokens, valid):
@@ -225,7 +225,7 @@ def main():
           "face_model":"sb-ai-lab/EmotiEffLib mobilenet_7.h5 (AffectNet 7-class)",
           "face_model_url":MODEL_URL,"feature_layer":feature_layer,"face_shape":face_shape,
           "temporal_pooling":"frame embeddings -> mean per 1-second bin -> 10 consecutive tokens per 10-s window",
-          "sample_fps":a.sample_fps,"missing_windows_excluded":missing,"trial_stats":trial_stats}
+          "sample_fps":a.sample_fps,"input_preprocessing":"RGB float32 raw 0..255",\n          "missing_windows_excluded":missing,"trial_stats":trial_stats}
     (out/"feature_spec.json").write_text(json.dumps(spec,indent=2),encoding="utf-8")
     print(f"DONE: {len(rows)} 5M windows, {len(set(r['subject'] for r in rows))} subjects, face={face_shape}; excluded={missing}")
 
