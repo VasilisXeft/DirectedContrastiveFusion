@@ -225,7 +225,8 @@ def main():
           "face_model":"sb-ai-lab/EmotiEffLib mobilenet_7.h5 (AffectNet 7-class)",
           "face_model_url":MODEL_URL,"feature_layer":feature_layer,"face_shape":face_shape,
           "temporal_pooling":"frame embeddings -> mean per 1-second bin -> 10 consecutive tokens per 10-s window",
-          "sample_fps":a.sample_fps,"input_preprocessing":"RGB float32 raw 0..255",\n          "missing_windows_excluded":missing,"trial_stats":trial_stats}
+          "sample_fps":a.sample_fps,"input_preprocessing":"RGB float32 raw 0..255",
+          "missing_windows_excluded":missing,"trial_stats":trial_stats}
     (out/"feature_spec.json").write_text(json.dumps(spec,indent=2),encoding="utf-8")
     print(f"DONE: {len(rows)} 5M windows, {len(set(r['subject'] for r in rows))} subjects, face={face_shape}; excluded={missing}")
 
