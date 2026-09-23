@@ -1,0 +1,49 @@
+seed: 42
+output_dir: runs
+
+dataset:
+  name: deap_external_5m
+  cache_dir: "data/features/deap_external_5m"
+  task: classification
+  num_classes: 2
+  label: valence
+  binary_threshold: 5.0
+
+loso:
+  enabled: true
+  subject_column: subject
+  validation_strategy: previous_subject
+  test_subject: s22
+
+model:
+  d_model: 128
+  heads: 4
+  mode: directed_topk
+  topk: 10
+  temperature: 0.1
+  selector_temperature: 0.7
+  gumbel: true
+  reliability: true
+  contrastive_weight: 0.005
+  encoders:
+    eeg:  {type: precomputed, feature_dim: 200}
+    ppg:  {type: precomputed, feature_dim: 512}
+    eda:  {type: precomputed, feature_dim: 1024}
+    temp: {type: precomputed, feature_dim: 1024}
+    # Set automatically-sized FACE dimension after cache generation if needed.
+    # EmotiEffLib MobileNetV2 normally exposes a 1280-D pre-classifier vector.
+    face: {type: precomputed, feature_dim: 1280}
+
+pretraining:
+  enabled: false
+  freeze_for_fusion: false
+
+training:
+  epochs: 30
+  patience: 5
+  batch_size: 32
+  workers: 0
+  lr: 0.0003
+  weight_decay: 0.0001
+  modality_dropout: 0.0
+  cpu: false
