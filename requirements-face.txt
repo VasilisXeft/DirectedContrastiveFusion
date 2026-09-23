@@ -1,0 +1,8 @@
+# Isolated dependencies for DEAP FACE extraction.
+# Recommended: create a separate Python 3.10 venv; do not install these into the
+# validated PyTorch CMF environment.
+tensorflow==2.15.1
+mediapipe==0.10.14
+opencv-python>=4.8,<5
+numpy>=1.23.5,<2
+pandas>=2.0,<3
