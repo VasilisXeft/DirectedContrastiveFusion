@@ -30,9 +30,9 @@ model:
     ppg:  {type: precomputed, feature_dim: 512}
     eda:  {type: precomputed, feature_dim: 1024}
     temp: {type: precomputed, feature_dim: 1024}
-    # Set automatically-sized FACE dimension after cache generation if needed.
-    # EmotiEffLib MobileNetV2 normally exposes a 1280-D pre-classifier vector.
-    face: {type: precomputed, feature_dim: 1280}
+    # EmotiEffLib AffectNet MobileNet checkpoint exposes the frozen "feats"
+    # representation as 256-D; cache_deap_face_features.py preserves 10 tokens.
+    face: {type: precomputed, feature_dim: 256}
 
 pretraining:
   enabled: false
