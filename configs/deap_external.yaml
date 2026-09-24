@@ -38,8 +38,8 @@ pretraining:
   freeze_for_fusion: false
 
 training:
-  epochs: 30
-  patience: 5
+  epochs: 150
+  patience: 30
   batch_size: 32
   workers: 0
   lr: 0.0003
