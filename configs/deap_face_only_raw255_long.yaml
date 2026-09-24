@@ -3,7 +3,7 @@ output_dir: runs
 
 dataset:
   name: deap_face_only_raw255
-  cache_dir: "data/features/deap_face_only"
+  cache_dir: "data/features/deap_face_only_raw255"
   task: classification
   num_classes: 2
   label: valence
