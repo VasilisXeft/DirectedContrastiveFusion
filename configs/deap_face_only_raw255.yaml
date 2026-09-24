@@ -1,0 +1,43 @@
+seed: 42
+output_dir: runs
+
+dataset:
+  name: deap_face_only_raw255
+  cache_dir: "data/features/deap_face_only"
+  task: classification
+  num_classes: 2
+  label: valence
+  binary_threshold: 5.0
+
+loso:
+  enabled: true
+  subject_column: subject
+  validation_strategy: previous_subject
+  test_subject: s22
+
+model:
+  d_model: 128
+  heads: 4
+  mode: late
+  topk: 1
+  temperature: 0.1
+  selector_temperature: 0.7
+  gumbel: false
+  reliability: false
+  contrastive_weight: 0.0
+  encoders:
+    face: {type: precomputed, feature_dim: 256}
+
+pretraining:
+  enabled: false
+  freeze_for_fusion: false
+
+training:
+  epochs: 30
+  patience: 5
+  batch_size: 32
+  workers: 0
+  lr: 0.0003
+  weight_decay: 0.0001
+  modality_dropout: 0.0
+  cpu: false
