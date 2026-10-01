@@ -24,7 +24,6 @@ model:
   selector_temperature: 0.7
   gumbel: true
   reliability: true
-  # Quality-aware reliability: r = sigmoid(logit(usefulness) - lambda_q * penalty)
   quality_lambda: 1.0
   reliability_src_weight: 0.5
   reliability_tgt_weight: 0.25
@@ -46,10 +45,11 @@ training:
   patience: 30
   batch_size: 32
   workers: 0
-  lr: 0.0003
+  # Lower LR + tighter clipping: previous K10/s22 run diverged to NaN at epoch 48.
+  lr: 0.0001
   weight_decay: 0.0001
+  adam_eps: 0.0000001
+  grad_clip: 1.0
   modality_dropout: 0.0
-  # Fraction of training modality instances receiving feature-space corruption.
-  # Severity is sampled in [0.25,1.0] and provides a known reliability target.
   reliability_corruption: 0.30
   cpu: false
