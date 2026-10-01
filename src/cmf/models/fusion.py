@@ -11,9 +11,11 @@ class ContrastiveSparseFusion(nn.Module):
                  topk=3, mode="contrastive_topk", temperature=0.1, reliability=True,
                  selector_temperature=0.7, gumbel=True, encoder_configs=None,
                  encoder_checkpoints=None, freeze_pretrained=True, quality_lambda=1.0,
-                 reliability_src_weight=0.5, reliability_tgt_weight=0.25):
+                 reliability_src_weight=0.5, reliability_tgt_weight=0.25,
+                 reliability_floor=0.25):
         super().__init__(); self.names=list(modality_shapes); self.mode=mode; self.topk=int(topk); self.temperature=float(temperature); self.selector_temperature=float(selector_temperature); self.use_gumbel=bool(gumbel); self.task=task
-        self.quality_lambda=float(quality_lambda); self.reliability_src_weight=float(reliability_src_weight); self.reliability_tgt_weight=float(reliability_tgt_weight)
+        self.quality_lambda=float(quality_lambda); self.reliability_src_weight=float(reliability_src_weight); self.reliability_tgt_weight=float(reliability_tgt_weight); self.reliability_floor=float(reliability_floor)
+        if not 0.0 <= self.reliability_floor < 1.0: raise ValueError("reliability_floor must be in [0,1)")
         encoder_configs=encoder_configs or {}; encoder_checkpoints=encoder_checkpoints or {}
         self.encoders=nn.ModuleDict({n:(load_pretrained_encoder(n,shape,d_model,encoder_configs.get(n,{}),encoder_checkpoints[n],freeze_pretrained) if n in encoder_checkpoints else build_encoder(n,shape,d_model,encoder_configs.get(n,{}))) for n,shape in modality_shapes.items()})
         self.projectors=nn.ModuleDict({n:nn.Sequential(nn.Linear(d_model,d_model),nn.GELU(),nn.Linear(d_model,d_model)) for n in self.names})
@@ -47,19 +49,24 @@ class ContrastiveSparseFusion(nn.Module):
     def _reliability(self,pooled,quality_penalty=None):
         b=len(next(iter(pooled.values()))); d=next(iter(pooled.values())).device; usefulness={}; rel={}
         for n in self.names:
-            if self.reliability is None:
-                usefulness[n]=torch.ones(b,device=d); rel[n]=torch.ones(b,device=d); continue
-            logits=self._finite(self.reliability[n](pooled[n]).squeeze(-1),-20.,20.)
-            usefulness[n]=torch.sigmoid(logits)
-            q=torch.zeros_like(logits) if quality_penalty is None or n not in quality_penalty else quality_penalty[n].to(d).float().view(-1)
+            q=torch.zeros(b,device=d) if quality_penalty is None or n not in quality_penalty else quality_penalty[n].to(d).float().view(-1)
             q=torch.nan_to_num(q,nan=1.0,posinf=1.0,neginf=1.0).clamp(0.,1.)
-            rel[n]=torch.sigmoid((logits-self.quality_lambda*q).clamp(-20.,20.))
+            if self.reliability is None:
+                usefulness[n]=torch.ones(b,device=d); rel[n]=(1.-q).clamp(0.,1.); continue
+            logits=self._finite(self.reliability[n](pooled[n]).squeeze(-1),-20.,20.)
+            raw=torch.sigmoid(logits)
+            # Learned task usefulness is bounded away from zero. Signal/representation
+            # quality remains the only mechanism capable of fully suppressing a modality.
+            usefulness[n]=self.reliability_floor+(1.-self.reliability_floor)*raw
+            quality_gate=(1.-self.quality_lambda*q).clamp(0.,1.)
+            rel[n]=(usefulness[n]*quality_gate).clamp(0.,1.)
         return usefulness,rel
 
     def _directional_scores(self,z,present,rel):
         scores={}
         for src,tgt in itertools.permutations(self.names,2):
             qs=F.normalize(self._finite(self.src_selector[src](z[src])),dim=-1,eps=1e-6); kt=F.normalize(self._finite(self.tgt_selector[tgt](z[tgt])),dim=-1,eps=1e-6)
+            # The same reliability gates used for feature contribution also bias edge routing.
             s=self._finite((qs*kt).sum(-1),-1.,1.)+self.reliability_src_weight*rel[src]+self.reliability_tgt_weight*rel[tgt]
             valid=present[src]*present[tgt]; scores[(src,tgt)]=torch.where(valid>0,self._finite(s,-10.,10.),torch.full_like(s,-1e4))
         return scores
@@ -102,6 +109,11 @@ class ContrastiveSparseFusion(nn.Module):
         if self.mode!="late":
             for (src,tgt),w in weights.items():
                 if not hard_masks[(src,tgt)].any() and not (self.training and w.requires_grad): continue
-                y,_=self.attn[f"{src}__{tgt}"](toks[tgt],toks[src],toks[src],need_weights=False); y=self._finite(y); enriched[tgt]=self._finite(enriched[tgt]+y.mean(1)*w.unsqueeze(-1)); counts[tgt]+=w; pair_count+=hard_masks[(src,tgt)].float()
+                y,_=self.attn[f"{src}__{tgt}"](toks[tgt],toks[src],toks[src],need_weights=False); y=self._finite(y)
+                # Gate a selected interaction by both its source and target reliability,
+                # keeping routing preference and actual contribution consistent.
+                edge_gate=(rel[src]*rel[tgt]).clamp(0.,1.)
+                ew=w*edge_gate
+                enriched[tgt]=self._finite(enriched[tgt]+y.mean(1)*ew.unsqueeze(-1)); counts[tgt]+=ew; pair_count+=hard_masks[(src,tgt)].float()
         per=[self._finite(enriched[n]/counts[n].clamp_min(1).unsqueeze(-1)) for n in self.names]; stack=torch.stack(per,1); pmask=torch.stack([present[n] for n in self.names],1).unsqueeze(-1); fused=self._finite((stack*pmask).sum(1)/pmask.sum(1).clamp_min(1.)); out=self.head(self.norm(fused)); out=self._finite(out)
         return out,{"contrastive_loss":self.contrastive_loss(z,present),"pair_count":pair_count.mean(),"reliability":rel,"usefulness":usefulness,"scores":scores,"hard_masks":hard_masks}
