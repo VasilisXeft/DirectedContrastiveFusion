@@ -17,7 +17,7 @@ def _trial_key(row, meta):
             return str(meta[key])
     # Only accept explicit trial tokens, never window index or class label.
     filename = str(row["file"])
-    match = re.search(r"(?:^|[_/\\-])trial[_-]?(\\d+)(?:[_./\\-]|$)", filename, re.I)
+    match = re.search(r"trial[_-]?([0-9]+)(?:[^0-9]|$)", filename, re.I)
     if match:
         return match.group(1)
     raise ValueError("Cannot identify trial for %s. Add trial_id/trial to manifest.csv or NPZ meta_json." % filename)
