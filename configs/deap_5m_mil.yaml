@@ -1,0 +1,45 @@
+seed: 42
+output_dir: runs
+dataset:
+  name: deap_external_5m
+  cache_dir: data/features/deap_external_5m_raw255
+  task: classification
+  num_classes: 2
+  label: valence
+  # Set only if trial window counts are known and uniform.
+  max_windows: null
+loso:
+  enabled: true
+  subject_column: subject
+  validation_strategy: previous_subject
+model:
+  d_model: 128
+  heads: 4
+  mode: directed_topk
+  topk: 10
+  temperature: 0.1
+  selector_temperature: 0.7
+  gumbel: true
+  reliability: true
+  quality_lambda: 1.0
+  reliability_floor: 0.25
+  reliability_src_weight: 0.5
+  reliability_tgt_weight: 0.25
+  encoders:
+    eeg:  {type: precomputed, feature_dim: 200}
+    ppg:  {type: precomputed, feature_dim: 512}
+    eda:  {type: precomputed, feature_dim: 1024}
+    temp: {type: precomputed, feature_dim: 1024}
+    face: {type: precomputed, feature_dim: 256}
+training:
+  epochs: 100
+  patience: 30
+  # Batch size counts TRIALS, not windows.
+  batch_size: 4
+  workers: 0
+  lr: 0.0001
+  weight_decay: 0.0001
+  adam_eps: 0.0000001
+  grad_clip: 1.0
+  reliability_corruption: 0.30
+  cpu: false
