@@ -33,7 +33,7 @@ def _window_order(row, meta):
                 return float(value)
             except (TypeError, ValueError):
                 pass
-    raise ValueError("Missing window ordering metadata for %s" % row["file"])
+    # Cache exporters commonly write sample_000001.npz in acquisition order.\n    # This fallback is valid only if the exporter preserved chronological ordering.\n    match = re.search(r"sample_([0-9]+)\\.npz$", str(row["file"]), re.I)\n    if match:\n        return float(match.group(1))\n    raise ValueError("Missing window ordering metadata for %s" % row["file"])
 
 
 class DEAPTrialBagDataset(Dataset):
