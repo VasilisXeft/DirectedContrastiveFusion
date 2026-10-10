@@ -116,4 +116,4 @@ class ContrastiveSparseFusion(nn.Module):
                 ew=w*edge_gate
                 enriched[tgt]=self._finite(enriched[tgt]+y.mean(1)*ew.unsqueeze(-1)); counts[tgt]+=ew; pair_count+=hard_masks[(src,tgt)].float()
         per=[self._finite(enriched[n]/counts[n].clamp_min(1).unsqueeze(-1)) for n in self.names]; stack=torch.stack(per,1); pmask=torch.stack([present[n] for n in self.names],1).unsqueeze(-1); fused=self._finite((stack*pmask).sum(1)/pmask.sum(1).clamp_min(1.)); out=self.head(self.norm(fused)); out=self._finite(out)
-        return out,{"contrastive_loss":self.contrastive_loss(z,present),"pair_count":pair_count.mean(),"reliability":rel,"usefulness":usefulness,"scores":scores,"hard_masks":hard_masks}
+        return out,{"contrastive_loss":self.contrastive_loss(z,present),"pair_count":pair_count.mean(),"reliability":rel,"usefulness":usefulness,"scores":scores,"hard_masks":hard_masks,"fused_embedding":self.norm(fused)}
