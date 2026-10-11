@@ -5,7 +5,7 @@ Install the repository and optional inference dependencies:
 
 ```powershell
 pip install -e .
-pip install momentfm transformers pillow
+pip install momentfm transformers pillow braindecode huggingface_hub
 ```
 
 Use a compatible version of PyTorch/Transformers for the installed MOMENT release.
@@ -18,7 +18,7 @@ Use a compatible version of PyTorch/Transformers for the installed MOMENT releas
 
 ## Extraction
 ```powershell
-python scripts/extract_deap_foundation_5m.py --deap-dir "D:/DEAP/data_preprocessed_python" --video-manifest "D:/DEAP/video_manifest.csv" --eegpt-torchscript "D:/models/eegpt_features.ts" --subjects s01
+python scripts/extract_deap_foundation_5m.py --deap-dir "D:/DEAP/data_preprocessed_python" --video-manifest "D:/DEAP/video_manifest.csv" --subjects s01
 ```
 
 **Do not run extraction until checking the exact video timing.** DEAP physiological trials include 3 s baseline, which is removed by this extractor. If videos start before/after that baseline, adjust the video timestamp offset in the script. The script currently assumes the video begins at the same time as the post-baseline signal. Duration checking alone cannot verify synchronization.
@@ -27,7 +27,7 @@ The script saves `x__eeg`, `x__ppg`, `x__eda`, `x__temp`, `x__face`, scalar labe
 
 ## Shape contract
 Expected token dimensions in `configs/deap_foundation_5m.yaml`:
-- EEGPT: 768 (verify against your checkpoint)
+- EEGPT: 512 (verify against your checkpoint)
 - MOMENT large: 1024 (verify against your checkpoint)
 - DINOv2 small: 384
 
@@ -47,3 +47,6 @@ Full LOSO is obtained by omitting `--subject`, **but only after** the cache cove
 - Cache extraction is frozen/pretrained-only, with no fitting to held-out subjects.
 - For publications, report the actual subject subset, per-subject results, and the original data/video alignment.
 - Check that the selected pretrained weights were not previously fine-tuned on DEAP labels; otherwise report potential pretraining overlap.
+
+## Direct pretrained EEGPT integration
+The extractor now loads `braindecode/eegpt-pretrained` directly via `EEGPT.from_pretrained`, with DEAP montage names, 128-to-256 Hz resampling and 4-second crops. No TorchScript export is needed. Verify EEG input units and perform a one-subject smoke test before bulk extraction.
