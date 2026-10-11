@@ -69,3 +69,16 @@ Example small development-only extraction with new settings:
 Do not re-extract the full cohort yet. Confirm the audit results, fit and test subject-independent normalization, then evaluate encoder-input ablations on development subjects before final benchmark runs.
 
 Finally, DEAP's valence label is a **60-second trial rating**, not independently assessed for every 10-second window. Trial-level evaluation should be the primary next experiment; window-level labels constitute weak supervision.
+
+## Unsupervised EEGPT input-scale sensitivity probe
+
+Without recomputing MOMENT or DINOv2, run this *development-only*
+probe after auditing the checkpoint and raw data:
+
+    python scripts/probe_eegpt_input_scales.py --deap-dir "C:/DEAP/data_preprocessed_python" --subjects s01 s02 --target-sfreq 250
+
+It reuses the same frozen EEGPT checkpoint to generate embeddings from the
+same two subjects and windows at two candidate scales (1e-6 and 1e-3).
+Reports output variance and relative embedding changes. This is a **sensitivity
+test**, not a supervised comparison or proof that larger variance is better.
+Neither validation nor final test labels are used, and no cache is changed.
