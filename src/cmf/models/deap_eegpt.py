@@ -38,7 +38,8 @@ class EEGPTFeatures:
         from safetensors.torch import load_file
         self.model = EEGPT(
             n_chans=len(self.names), n_times=self.window_samples,
-            sfreq=256.0, chs_info=info["chs"], return_encoder_output=True,\n            chan_proj_type="none",
+            sfreq=256.0, chs_info=info["chs"], return_encoder_output=True,
+            chan_proj_type="none",
         )
         checkpoint = hf_hub_download(repo_id=model_id, filename="model.safetensors")
         weights = load_file(checkpoint)
