@@ -1,0 +1,65 @@
+seed: 42
+output_dir: runs
+
+dataset:
+  name: deap_foundation_5m
+  cache_dir: "data/features/deap_foundation_5m"
+  task: classification
+  num_classes: 2
+  label: valence
+  binary_threshold: 5.0
+
+loso:
+  enabled: true
+  subject_column: subject
+  validation_strategy: previous_subject
+  test_subject: s22
+
+model:
+  d_model: 128
+  heads: 4
+  mode: directed_topk
+  topk: 10
+  temperature: 0.1
+  selector_temperature: 0.7
+  gumbel: true
+  reliability: true
+  quality_lambda: 1.0
+  # Learned usefulness cannot suppress a clean modality below 0.25.
+  # Quality penalty can still drive final reliability to zero.
+  reliability_floor: 0.25
+  reliability_src_weight: 0.5
+  reliability_tgt_weight: 0.25
+  reliability_loss_weight: 0.1
+  contrastive_weight: 0.005
+  # Default off: avoid reinforcing attention-generated pseudo-labels.
+  # Enable in a dedicated ablation after validating the baseline.
+  selector_loss_weight: 0.0
+  pair_selector:
+    hidden: 128
+    hsic_weight: 1.0
+    attention_weight: 1.0
+    utility_weight: 1.0
+  encoders:
+    eeg:  {type: precomputed, feature_dim: 768}
+    ppg:  {type: precomputed, feature_dim: 1024}
+    eda:  {type: precomputed, feature_dim: 1024}
+    temp: {type: precomputed, feature_dim: 1024}
+    face: {type: precomputed, feature_dim: 384}
+
+pretraining:
+  enabled: false
+  freeze_for_fusion: false
+
+training:
+  epochs: 30
+  patience: 10
+  batch_size: 128
+  workers: 0
+  lr: 0.0001
+  weight_decay: 0.0001
+  adam_eps: 0.0000001
+  grad_clip: 1.0
+  modality_dropout: 0.0
+  reliability_corruption: 0.0
+  cpu: false
