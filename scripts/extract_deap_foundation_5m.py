@@ -31,28 +31,7 @@ def standardize(x):
                          (x.std(axis=-1, keepdims=True) + 1e-6))
 
 
-class EEGPTFeatures:
-    def __init__(self, path, device, output_tokens=4):
-        self.device = device
-        self.model = torch.jit.load(str(path), map_location=device).eval()
-        self.output_tokens = output_tokens
-
-    @torch.inference_mode()
-    def __call__(self, signal):
-        x = torch.from_numpy(standardize(signal)).unsqueeze(0).to(self.device)
-        y = self.model(x)
-        if isinstance(y, (tuple, list)):
-            y = y[0]
-        if isinstance(y, dict):
-            y = y.get("last_hidden_state", y.get("features"))
-        if y is None:
-            raise ValueError("EEGPT wrapper did not return embeddings")
-        if y.ndim == 2:
-            y = y.unsqueeze(1)
-        if y.ndim != 3:
-            raise ValueError(f"Unexpected EEGPT output shape {tuple(y.shape)}")
-        y = torch.nn.functional.adaptive_avg_pool1d(y.transpose(1, 2), self.output_tokens).transpose(1, 2)
-        return y[0].float().cpu().numpy()
+from cmf.models.deap_eegpt import EEGPTFeatures
 
 
 class MomentFeatures:
@@ -118,7 +97,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--deap-dir", required=True, help="Folder with s01.dat ... s32.dat")
     p.add_argument("--video-manifest", required=True, help="CSV: subject,trial,video_path")
-    p.add_argument("--eegpt-torchscript", required=True, help="Pretrained EEGPT TorchScript feature wrapper")
+    p.add_argument("--eegpt-model", default="braindecode/eegpt-pretrained", help="Braindecode pretrained EEGPT model ID")
     p.add_argument("--out", default="data/features/deap_foundation_5m")
     p.add_argument("--subjects", nargs="+", default=None)\n    p.add_argument("--allow-missing-videos", action="store_true", help="Skip trials without video")
     p.add_argument("--window-seconds", type=int, default=10)
@@ -131,7 +110,7 @@ def main():
     with open(a.video_manifest, newline="", encoding="utf-8-sig") as f:
         mapping = {(row["subject"].lower().replace("s", "").zfill(2),
                     int(row["trial"])): Path(row["video_path"]) for row in csv.DictReader(f)}
-    eeg = EEGPTFeatures(a.eegpt_torchscript, a.device)
+    eeg = EEGPTFeatures(a.device, model_id=a.eegpt_model)
     moment = MomentFeatures(a.device)
     dino = DinoFeatures(a.device)
     subjects = a.subjects or sorted({f"s{int(s):02d}" for s, _ in mapping})
