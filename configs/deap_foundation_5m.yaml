@@ -12,7 +12,10 @@ dataset:
 loso:
   enabled: true
   subject_column: subject
-  validation_strategy: previous_subject
+  # Three subjects spread across the cohort for more stable checkpoint selection.
+  # With test=s22, validation subjects are s21, s14 and s07.
+  validation_strategy: spaced_previous
+  validation_subject_count: 3
   test_subject: s22
 
 model:
