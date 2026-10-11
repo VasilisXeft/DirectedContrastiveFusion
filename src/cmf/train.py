@@ -3,7 +3,7 @@ import json, time
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from sklearn.metrics import accuracy_score, f1_score, mean_squared_error
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, mean_squared_error
 from cmf.config import load_config
 from cmf.datasets.common import CachedMultimodalDataset, collate_multimodal
 from cmf.models.fusion import ContrastiveSparseFusion
@@ -32,7 +32,7 @@ def evaluate(model,loader,device,task):
             else: target=y.float().reshape(y.shape[0],-1); loss=torch.nn.functional.mse_loss(pred,target); ps.append(pred.cpu().numpy()); ys.append(target.cpu().numpy())
             if not torch.isfinite(loss): raise FloatingPointError("Non-finite evaluation loss")
             losses.append(loss.item())
-    if task=="classification": return {"loss":float(np.mean(losses)),"accuracy":accuracy_score(ys,ps),"macro_f1":f1_score(ys,ps,average="macro")}
+    if task=="classification": return {"loss":float(np.mean(losses)),"accuracy":accuracy_score(ys,ps),"balanced_accuracy":balanced_accuracy_score(ys,ps),"macro_f1":f1_score(ys,ps,average="macro")}
     ys=np.concatenate(ys); ps=np.concatenate(ps); return {"loss":float(np.mean(losses)),"rmse":float(mean_squared_error(ys,ps)**.5)}
 def routing_diagnostics(model,loader,device):
     model.eval(); edge_counts={}; rel_sums={}; useful_sums={}; q_sums={}; n=0; pair_sum=0.0
@@ -58,15 +58,15 @@ def train_from_config(config_path,mode=None,split_manifests=None,run_name=None,r
     device=torch.device("cuda" if torch.cuda.is_available() and not tcfg.get("cpu",False) else "cpu"); model.to(device); class_weights=class_weights.to(device) if class_weights is not None else None; train_loader=DataLoader(train_ds,batch_size=tcfg.get("batch_size",16),shuffle=True,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal); val_loader=DataLoader(val_ds,batch_size=tcfg.get("batch_size",16),shuffle=False,num_workers=tcfg.get("workers",0),collate_fn=collate_multimodal)
     opt=torch.optim.AdamW(model.parameters(),lr=float(tcfg.get("lr",1e-4)),weight_decay=float(tcfg.get("weight_decay",1e-4)),eps=float(tcfg.get("adam_eps",1e-7))); outdir=Path(cfg.get("output_dir","runs"))/dcfg["name"]/(mode or mcfg.get("mode","contrastive_topk")); outdir=outdir/run_name if run_name else outdir; outdir=ensure_dir(outdir); best=(-float("inf") if task=="classification" else float("inf")); history=[]; best_metrics=None; bad_epochs=0; patience=int(tcfg.get("patience",0)); grad_clip=float(tcfg.get("grad_clip",1.0))
     for epoch in range(1,int(tcfg.get("epochs",30))+1):
-        model.train(); total=[]; bases=[]; rel_losses=[]; pairs=[]; grad_norms=[]; start=time.time()
+        model.train(); total=[]; bases=[]; rel_losses=[]; selector_losses=[]; pairs=[]; grad_norms=[]; start=time.time()
         for bi,batch in enumerate(train_loader):
             mods,present,y=move(batch,device); q,rt=extras(batch,device); pred,aux=model(mods,present,q,targets=y if task=="classification" else None); base=torch.nn.functional.cross_entropy(pred,y.long().view(-1),weight=class_weights) if task=="classification" else torch.nn.functional.mse_loss(pred,y.float().reshape(y.shape[0],-1)); cweight=float(mcfg.get("contrastive_weight",.1)) if (mode or mcfg.get("mode","contrastive_topk"))=="contrastive_topk" else 0.; rloss=reliability_loss(aux["reliability"],rt,present); rweight=float(mcfg.get("reliability_loss_weight",.1)); loss=base+cweight*aux["contrastive_loss"]+rweight*rloss+float(mcfg.get("selector_loss_weight",0.1))*aux["selector_loss"]
             if not torch.isfinite(loss): raise FloatingPointError(f"Non-finite training loss at epoch={epoch} batch={bi}: base={base.item()} reliability={rloss.item()} contrastive={aux['contrastive_loss'].item()}")
             opt.zero_grad(set_to_none=True); loss.backward(); gn=torch.nn.utils.clip_grad_norm_(model.parameters(),grad_clip,error_if_nonfinite=True); opt.step()
             for name,p in model.named_parameters():
                 if not torch.isfinite(p).all(): raise FloatingPointError(f"Non-finite parameter after optimizer step: {name}, epoch={epoch}, batch={bi}")
-            total.append(loss.item()); bases.append(base.item()); rel_losses.append(rloss.item()); pairs.append(aux["pair_count"].item()); grad_norms.append(float(gn))
-        metrics=evaluate(model,val_loader,device,task); rec={"epoch":epoch,"train_loss":float(np.mean(total)),"base_loss":float(np.mean(bases)),"reliability_loss":float(np.mean(rel_losses)),"mean_selected_pairs":float(np.mean(pairs)),"mean_grad_norm":float(np.mean(grad_norms)),"max_grad_norm":float(np.max(grad_norms)),"lr":float(opt.param_groups[0]["lr"]),"seconds":time.time()-start,**metrics}; history.append(rec); print(rec); improved=(metrics["macro_f1"]>best+1e-6) if task=="classification" else (metrics["loss"]<best-1e-6)
+            total.append(loss.item()); bases.append(base.item()); rel_losses.append(rloss.item()); selector_losses.append(float(aux["selector_loss"].detach())); pairs.append(aux["pair_count"].item()); grad_norms.append(float(gn))
+        metrics=evaluate(model,val_loader,device,task); rec={"epoch":epoch,"train_loss":float(np.mean(total)),"base_loss":float(np.mean(bases)),"reliability_loss":float(np.mean(rel_losses)),"selector_loss":float(np.mean(selector_losses)),"mean_selected_pairs":float(np.mean(pairs)),"mean_grad_norm":float(np.mean(grad_norms)),"max_grad_norm":float(np.max(grad_norms)),"lr":float(opt.param_groups[0]["lr"]),"seconds":time.time()-start,**metrics}; history.append(rec); print(rec); improved=(metrics["macro_f1"]>best+1e-6) if task=="classification" else (metrics["loss"]<best-1e-6)
         if improved: best=metrics["macro_f1"] if task=="classification" else metrics["loss"]; best_metrics=metrics.copy(); bad_epochs=0; torch.save({"model":model.state_dict(),"shapes":shapes,"num_outputs":num_outputs,"task":task,"config":cfg},outdir/"best.pt")
         else:
             bad_epochs+=1
