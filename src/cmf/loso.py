@@ -78,7 +78,7 @@ def run_loso(config_path, subject=None, run_all=False, mode=None, topk=None, see
         task = dcfg.get("task", "classification")
         summary = {"config": str(config_path), "mode": mode or cfg["model"].get("mode"), "topk": topk, "seed": seed, "experiment_name": experiment_name, "folds": results}
         if task == "classification":
-            for key in ("accuracy", "macro_f1"):
+            for key in ("accuracy", "balanced_accuracy", "macro_f1"):
                 vals = [r["test"][key] for r in results]
                 summary[key] = {"mean": float(np.mean(vals)), "std": float(np.std(vals, ddof=1))}
         else:
