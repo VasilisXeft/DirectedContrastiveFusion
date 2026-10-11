@@ -20,13 +20,13 @@ def main():
     p.add_argument("--seeds",type=int,nargs="+",default=[42])
     p.add_argument("--seed",type=int,default=None,help="Convenience alias for one seed")
     p.add_argument("--subject",default=None)
-    p.add_argument("--mode",choices=["late","full","directed_topk","contrastive_topk"],default=None)
+    p.add_argument("--mode",choices=["late","full","directed_topk","contrastive_topk","hsic_topk","clam_topk","utility_topk","hybrid_topk"],default=None)
     p.add_argument("--topk",type=int,default=None)
     p.add_argument("--skip-existing",action="store_true")
     a=p.parse_args()
-    if a.topk is not None and a.mode not in {"directed_topk","contrastive_topk"}:
+    if a.topk is not None and a.mode not in {"directed_topk","contrastive_topk","hsic_topk","clam_topk","utility_topk","hybrid_topk"}:
         p.error("--topk is only valid with --mode directed_topk or contrastive_topk")
-    if a.mode in {"directed_topk","contrastive_topk"} and a.topk is None:
+    if a.mode in {"directed_topk","contrastive_topk","hsic_topk","clam_topk","utility_topk","hybrid_topk"} and a.topk is None:
         p.error("--topk is required for sparse modes")
     seeds=[a.seed] if a.seed is not None else a.seeds
     experiments=[(a.mode,a.topk)] if a.mode is not None else matrix()
