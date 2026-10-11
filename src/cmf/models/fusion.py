@@ -117,7 +117,7 @@ class ContrastiveSparseFusion(nn.Module):
             scores,selector_aux=self.pair_selector(z,toks,present,rel)
         else:
             scores=self._static_similarity_scores(z,present) if self.mode=="similarity_topk" else self._directional_scores(z,present,rel)
-         b=next(iter(pooled.values())).shape[0]; dev=next(iter(pooled.values())).device; weights,hard_masks=self._selection(scores,b,dev)
+        b=next(iter(pooled.values())).shape[0]; dev=next(iter(pooled.values())).device; weights,hard_masks=self._selection(scores,b,dev)
         enriched={n:self._finite(pooled[n]*rel[n].unsqueeze(-1)*present[n].unsqueeze(-1)) for n in self.names}; counts={n:present[n].clone() for n in self.names}; pair_count=torch.zeros(b,device=dev); edge_effects={}
         if self.mode!="late":
             for (src,tgt),w in weights.items():
@@ -131,7 +131,7 @@ class ContrastiveSparseFusion(nn.Module):
                 enriched[tgt]=self._finite(enriched[tgt]+delta); counts[tgt]+=ew;
                 if self.training and targets is not None and self.mode in {"utility_topk","hybrid_topk"}:
                     edge_effects[(src,tgt)]=(delta,ew)
-                 pair_count+=hard_masks[(src,tgt)].float()
+                pair_count+=hard_masks[(src,tgt)].float()
         per=[self._finite(enriched[n]/counts[n].clamp_min(1).unsqueeze(-1)) for n in self.names]; stack=torch.stack(per,1); pmask=torch.stack([present[n] for n in self.names],1).unsqueeze(-1); fused=self._finite((stack*pmask).sum(1)/pmask.sum(1).clamp_min(1.)); out=self.head(self.norm(fused)); out=self._finite(out)
         selector_loss=out.new_zeros(())
         if self.pair_selector is not None:
@@ -140,28 +140,27 @@ class ContrastiveSparseFusion(nn.Module):
             if self.training and targets is not None and self.mode in {"utility_topk","hybrid_topk"}:
                 # Per-example leave-one-selected-edge-out teacher. No gradients
                 # through the teacher: only the utility scorer learns from it.
-                with torch.no_grad():
-                    full_ce=F.cross_entropy(out.detach(),targets.long().view(-1),reduction="none")
-                    for i,p in enumerate(self.pair_selector.pairs):
-                        if p not in edge_effects: continue
-                        delta,ew=edge_effects[p]
-                        tgt=p[1]
-                        adjusted=[]
-                        for n in self.names:
-                            if n==tgt:
-                                e=enriched[n].detach()-delta.detach()
-                                c=counts[n].detach()-ew.detach()
-                            else:
-                                e=enriched[n].detach(); c=counts[n].detach()
-                            adjusted.append(e/c.clamp_min(1).unsqueeze(-1))
-                        stack_wo=torch.stack(adjusted,1)
-                        pm=torch.stack([present[n] for n in self.names],1).unsqueeze(-1)
-                        fused_wo=(stack_wo*pm).sum(1)/pm.sum(1).clamp_min(1.)
-                        logits_wo=self.head(self.norm(fused_wo))
-                        target_delta=(F.cross_entropy(logits_wo,targets.long().view(-1),reduction="none")-full_ce).clamp(-2.,2.)
-                        valid=selector_aux["pair_valid"][:,i] & hard_masks[p]
-                        if valid.any():
-                            selector_loss=selector_loss+F.smooth_l1_loss(
-                                selector_aux["utility_predictions"][valid,i],
-                                target_delta[valid])
+                full_ce=F.cross_entropy(out.detach(),targets.long().view(-1),reduction="none")
+                for i,p in enumerate(self.pair_selector.pairs):
+                    if p not in edge_effects: continue
+                    delta,ew=edge_effects[p]
+                    tgt=p[1]
+                    adjusted=[]
+                    for n in self.names:
+                        if n==tgt:
+                            e=enriched[n].detach()-delta.detach()
+                            c=counts[n].detach()-ew.detach()
+                        else:
+                            e=enriched[n].detach(); c=counts[n].detach()
+                        adjusted.append(e/c.clamp_min(1).unsqueeze(-1))
+                    stack_wo=torch.stack(adjusted,1)
+                    pm=torch.stack([present[n] for n in self.names],1).unsqueeze(-1)
+                    fused_wo=(stack_wo*pm).sum(1)/pm.sum(1).clamp_min(1.)
+                    logits_wo=self.head(self.norm(fused_wo))
+                    target_delta=(F.cross_entropy(logits_wo,targets.long().view(-1),reduction="none")-full_ce).clamp(-2.,2.)
+                    valid=selector_aux["pair_valid"][:,i] & hard_masks[p]
+                    if valid.any():
+                        selector_loss=selector_loss+F.smooth_l1_loss(
+                            selector_aux["utility_predictions"][valid,i],
+                            target_delta[valid].detach())
         return out,{"selector_loss":selector_loss,"selector_aux":selector_aux,"contrastive_loss":self.contrastive_loss(z,present),"pair_count":pair_count.mean(),"reliability":rel,"usefulness":usefulness,"scores":scores,"hard_masks":hard_masks,"fused_embedding":self.norm(fused)}
