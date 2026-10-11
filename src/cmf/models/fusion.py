@@ -14,7 +14,8 @@ class ContrastiveSparseFusion(nn.Module):
                  encoder_checkpoints=None, freeze_pretrained=True, quality_lambda=1.0,
                  reliability_src_weight=0.5, reliability_tgt_weight=0.25,
                  reliability_floor=0.25, selector_config=None):
-        super().__init__(); self.names=list(modality_shapes); self.mode=mode; self.topk=int(topk); self.temperature=float(temperature); self.selector_temperature=float(selector_temperature); self.use_gumbel=bool(gumbel); self.task=task
+        super().__init__(); self.names=list(modality_shapes); self.mode=mode; self.unimodal_name=mode.split("unimodal_",1)[1] if mode.startswith("unimodal_") else None; self.topk=int(topk); self.temperature=float(temperature); self.selector_temperature=float(selector_temperature); self.use_gumbel=bool(gumbel); self.task=task
+        if self.unimodal_name is not None and self.unimodal_name not in self.names: raise ValueError(f"Unknown unimodal modality: {self.unimodal_name}")
         self.quality_lambda=float(quality_lambda); self.reliability_src_weight=float(reliability_src_weight); self.reliability_tgt_weight=float(reliability_tgt_weight); self.reliability_floor=float(reliability_floor)
         if not 0.0 <= self.reliability_floor < 1.0: raise ValueError("reliability_floor must be in [0,1)")
         encoder_configs=encoder_configs or {}; encoder_checkpoints=encoder_checkpoints or {}
@@ -30,6 +31,7 @@ class ContrastiveSparseFusion(nn.Module):
             attention_weight=selector_config.get("attention_weight",1.0),
             hsic_weight=selector_config.get("hsic_weight",1.0))
             if self.mode in PairSelector.MODES else None)
+        self.early_projection=nn.Sequential(nn.Linear(len(self.names)*d_model,d_model),nn.GELU(),nn.LayerNorm(d_model)) if self.mode=="early" else None
         self.norm=nn.LayerNorm(d_model); self.head=nn.Sequential(nn.Linear(d_model,d_model),nn.GELU(),nn.Dropout(.2),nn.Linear(d_model,num_outputs))
 
     @staticmethod
@@ -108,18 +110,20 @@ class ContrastiveSparseFusion(nn.Module):
             else:
                 k=min(self.topk,len(pairs)); idx=mat.topk(k,dim=1).indices; hard=torch.zeros_like(mat).scatter_(1,idx,1.)*valid.float(); st=hard
             for j,p in enumerate(pairs): weights[p]=st[:,j]; hard_masks[p]=hard[:,j].bool()
-        elif self.mode!="late": raise ValueError(f"Unknown fusion mode {self.mode}")
+        elif self.mode not in {"late","early"} and self.unimodal_name is None: raise ValueError(f"Unknown fusion mode {self.mode}")
         return weights,hard_masks
 
     def forward(self,modalities,present,quality_penalty=None,targets=None):
         toks,pooled,z=self._encode(modalities); usefulness,rel=self._reliability(pooled,quality_penalty); selector_aux={}
+        if self.unimodal_name is not None:
+            present={n:(present[n] if n==self.unimodal_name else torch.zeros_like(present[n])) for n in self.names}
         if self.pair_selector is not None:
             scores,selector_aux=self.pair_selector(z,toks,present,rel)
         else:
             scores=self._static_similarity_scores(z,present) if self.mode=="similarity_topk" else self._directional_scores(z,present,rel)
         b=next(iter(pooled.values())).shape[0]; dev=next(iter(pooled.values())).device; weights,hard_masks=self._selection(scores,b,dev)
         enriched={n:self._finite(pooled[n]*rel[n].unsqueeze(-1)*present[n].unsqueeze(-1)) for n in self.names}; counts={n:present[n].clone() for n in self.names}; pair_count=torch.zeros(b,device=dev); edge_effects={}
-        if self.mode!="late":
+        if self.mode not in {"late","early"} and self.unimodal_name is None:
             for (src,tgt),w in weights.items():
                 if not hard_masks[(src,tgt)].any() and not (self.training and w.requires_grad): continue
                 y,_=self.attn[f"{src}__{tgt}"](toks[tgt],toks[src],toks[src],need_weights=False); y=self._finite(y)
@@ -132,6 +136,12 @@ class ContrastiveSparseFusion(nn.Module):
                 if self.training and targets is not None and self.mode in {"utility_topk","hybrid_topk"}:
                     edge_effects[(src,tgt)]=(delta,ew)
                 pair_count+=hard_masks[(src,tgt)].float()
+        if self.mode=="early":
+            # Feature-level early fusion: concatenate aligned modality embeddings and learn a joint projection.
+            masked=[pooled[n]*present[n].unsqueeze(-1) for n in self.names]
+            fused=self.early_projection(torch.cat(masked,dim=-1))
+            out=self._finite(self.head(self.norm(fused)))
+            return out,{"selector_loss":out.new_zeros(()),"selector_aux":{},"contrastive_loss":out.new_zeros(()),"pair_count":out.new_zeros(()),"reliability":rel,"usefulness":usefulness,"scores":{},"hard_masks":{},"fused_embedding":self.norm(fused)}
         per=[self._finite(enriched[n]/counts[n].clamp_min(1).unsqueeze(-1)) for n in self.names]; stack=torch.stack(per,1); pmask=torch.stack([present[n] for n in self.names],1).unsqueeze(-1); fused=self._finite((stack*pmask).sum(1)/pmask.sum(1).clamp_min(1.)); out=self.head(self.norm(fused)); out=self._finite(out)
         selector_loss=out.new_zeros(())
         if self.pair_selector is not None:
