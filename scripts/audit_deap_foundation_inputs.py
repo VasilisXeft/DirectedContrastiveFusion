@@ -103,6 +103,24 @@ def main():
     summarize_array("PPG (channel 38)", stim[38])
     summarize_array("EDA (channel 36)", stim[36])
     summarize_array("TEMP (channel 39)", stim[39])
+    print("\n== Explicit legacy encoder-input tensor shapes ==")
+    from scipy.signal import resample, resample_poly
+    eeg_window = stim[:32, :10 * 128]
+    eeg_256 = resample_poly(eeg_window * 1e-6, 2, 1, axis=-1)
+    eeg_250 = resample_poly(eeg_window * 1e-3, 125, 64, axis=-1)
+    print(f"EEGPT legacy 10s: {eeg_256.shape}, first 4s crop: "
+          f"{eeg_256[:, :1024].shape} (32 channels @256Hz)")
+    print(f"EEGPT checkpoint-aligned candidate 10s: {eeg_250.shape}, first 4s crop: "
+          f"{eeg_250[:, :1000].shape} (32 channels @250Hz)")
+    x = stim[38, :10 * 128].reshape(1, -1)
+    x_legacy = (x - x.mean(axis=-1, keepdims=True)) / (x.std(axis=-1, keepdims=True) + 1e-6)
+    first_chunk = np.array_split(x_legacy, 4, axis=-1)[0]
+    moment_tensor = resample(first_chunk, 512, axis=-1)[None].astype(np.float32)
+    print(f"MOMENT legacy first 2.5s PPG input: {moment_tensor.shape} [B,C,L], "
+          f"finite={bool(np.isfinite(moment_tensor).all())}")
+    if moment_tensor.shape != (1, 1, 512):
+        raise AssertionError("MOMENT input contract was violated")
+
     p95 = np.percentile(np.abs(stim[:32]), 95)
     print(f"EEG candidate p95 * 1e-6={p95 * 1e-6:.6g}; "
           f"/ 1000={p95 / 1000:.6g}. "
@@ -129,6 +147,17 @@ def main():
                   f"raw_BGR_shape={frame.shape if ok else None}")
             if not ok or fps <= 0:
                 raise RuntimeError(f"Unusable facial video: {video}")
+            from PIL import Image
+            import cv2
+            from transformers import AutoImageProcessor
+            processor = AutoImageProcessor.from_pretrained("facebook/dinov2-small")
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            pixel = processor(images=[Image.fromarray(rgb)],
+                              return_tensors="pt")["pixel_values"]
+            print(f"DINOv2 actual preprocessed video frame shape={tuple(pixel.shape)}, "
+                  f"min={float(pixel.min()):.4g}, max={float(pixel.max()):.4g}")
+            if tuple(pixel.shape) != (1, 3, 224, 224):
+                raise ValueError(f"Unexpected DINOv2 processor output shape: {pixel.shape}")
 
     cache = Path(args.cache)
     matching = sorted(cache.glob(f"{args.subject}_trial{args.trial:02d}_start*.npz"))
