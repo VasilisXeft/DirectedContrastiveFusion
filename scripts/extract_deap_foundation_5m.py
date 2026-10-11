@@ -120,7 +120,7 @@ def main():
     p.add_argument("--video-manifest", required=True, help="CSV: subject,trial,video_path")
     p.add_argument("--eegpt-torchscript", required=True, help="Pretrained EEGPT TorchScript feature wrapper")
     p.add_argument("--out", default="data/features/deap_foundation_5m")
-    p.add_argument("--subjects", nargs="+", default=None)
+    p.add_argument("--subjects", nargs="+", default=None)\n    p.add_argument("--allow-missing-videos", action="store_true", help="Skip trials without video")
     p.add_argument("--window-seconds", type=int, default=10)
     p.add_argument("--stride-seconds", type=int, default=5)
     p.add_argument("--threshold", type=float, default=5.)
@@ -134,7 +134,7 @@ def main():
     eeg = EEGPTFeatures(a.eegpt_torchscript, a.device)
     moment = MomentFeatures(a.device)
     dino = DinoFeatures(a.device)
-    subjects = a.subjects or [f"s{i:02d}" for i in range(1, 33)]
+    subjects = a.subjects or sorted({f"s{int(s):02d}" for s, _ in mapping})
     manifest_path = output / "manifest.csv"
     existing = {}
     if manifest_path.exists():
