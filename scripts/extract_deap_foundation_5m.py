@@ -1,8 +1,7 @@
 """Extract frozen foundation-model embeddings from raw DEAP Python trials.
 
 Requires: pip install momentfm transformers pillow braindecode
-EEGPT checkpoints vary by release: provide a TorchScript EEGPT feature extractor
-that accepts [B, C, T] and returns [B, D] or [B, tokens, D].
+Uses native pretrained EEGPT, MOMENT and DINOv2 feature encoders.
 No randomly initialized fallback is permitted.
 """
 import argparse
@@ -38,7 +37,9 @@ class MomentFeatures:
     def __init__(self, device, model_id="AutonLab/MOMENT-1-large", length=512, tokens=4):
         from momentfm import MOMENTPipeline
         self.model = MOMENTPipeline.from_pretrained(
-            model_id, model_kwargs={"task_name": "embedding"}).to(device).eval()
+            model_id, model_kwargs={"task_name": "embedding"})
+        self.model.init()
+        self.model = self.model.to(device).eval()
         self.device, self.length, self.tokens = device, length, tokens
 
     @torch.inference_mode()
@@ -52,7 +53,9 @@ class MomentFeatures:
             seq = resample(chunk, self.length, axis=-1).astype(np.float32)
             tensor = torch.from_numpy(seq[None]).to(self.device)
             output = self.model(x_enc=tensor)
-            emb = output.embeddings
+            emb = getattr(output, "embeddings", None)
+            if emb is None:
+                raise RuntimeError("MOMENT returned no embeddings. Verify task_name=embedding and model.init().")
             embeddings.append(emb.reshape(-1).float().cpu().numpy())
         return np.stack(embeddings)
 
@@ -114,8 +117,8 @@ def main():
         mapping = {(row["subject"].lower().replace("s", "").zfill(2),
                     int(row["trial"])): Path(row["video_path"]) for row in csv.DictReader(f)}
     eeg = EEGPTFeatures(a.device, model_id=a.eegpt_model)
-    moment = MomentFeatures(a.device)
-    dino = DinoFeatures(a.device)
+    moment = MomentFeatures(a.device, model_id=a.moment_model)
+    dino = DinoFeatures(a.device, model_id=a.dinov2_model)
     subjects = a.subjects or sorted({f"s{int(s):02d}" for s, _ in mapping})
     manifest_path = output / "manifest.csv"
     existing = {}
@@ -130,6 +133,9 @@ def main():
         for trial in range(len(signals)):
             video = mapping.get((subject[1:], trial))
             if video is None or not video.is_file():
+                if a.allow_missing_videos:
+                    print(f"Skipping missing video: {subject} trial {trial}")
+                    continue
                 raise FileNotFoundError(f"Video mapping missing: {subject}, trial={trial} (zero-based)")
             # IMPORTANT: manifest videos must be pre-aligned to the full trial.
             # DEAP physiological data contain 3s baseline; discard it.
