@@ -123,7 +123,7 @@ def main():
     p.add_argument("--subjects", nargs="+", default=None)\n    p.add_argument("--allow-missing-videos", action="store_true", help="Skip trials without video")
     p.add_argument("--window-seconds", type=int, default=10)
     p.add_argument("--stride-seconds", type=int, default=5)
-    p.add_argument("--threshold", type=float, default=5.)
+    p.add_argument("--threshold", type=float, default=5.)\n    p.add_argument("--moment-model", default="AutonLab/MOMENT-1-large")\n    p.add_argument("--dinov2-model", default="facebook/dinov2-small")
     p.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     a = p.parse_args()
     root = Path(a.deap_dir)
@@ -157,7 +157,7 @@ def main():
             cap = __import__("cv2").VideoCapture(str(video))
             duration = cap.get(__import__("cv2").CAP_PROP_FRAME_COUNT) / max(cap.get(__import__("cv2").CAP_PROP_FPS), 1)
             cap.release()
-            if abs(duration - n / 128) > 5:
+            if abs(duration - n / 128) > 1:
                 raise ValueError(f"Video duration mismatch for {subject} trial {trial}: {duration:.1f}s vs {n/128:.1f}s")
             for start, end in windows(n, a.window_seconds * 128, a.stride_seconds * 128):
                 filename = f"{subject}_trial{trial:02d}_start{start:06d}.npz"
