@@ -31,10 +31,38 @@ class EEGPTFeatures:
         self.window_samples = 1024  # 4 seconds at 256 Hz
         info = mne.create_info(self.names, sfreq=256.0, ch_types=["eeg"] * len(self.names))
         info.set_montage("standard_1020", on_missing="raise")
-        self.model = EEGPT.from_pretrained(
-            model_id, n_chans=len(self.names), n_times=self.window_samples,
+        # The pretrained checkpoint stores a montage-specific chans_id tensor.
+        # Instantiate for DEAP, then load the pretrained tensors excluding only
+        # that channel-ID buffer, which must reflect the current electrode names.
+        from huggingface_hub import hf_hub_download
+        from safetensors.torch import load_file
+        self.model = EEGPT(
+            n_chans=len(self.names), n_times=self.window_samples,
             sfreq=256.0, chs_info=info["chs"], return_encoder_output=True,
-        ).to(device).eval()
+        )
+        checkpoint = hf_hub_download(repo_id=model_id, filename="model.safetensors")
+        weights = load_file(checkpoint)
+        skipped = [k for k in weights if k == "chans_id" or k.endswith(".chans_id")]
+        for key in skipped:
+            weights.pop(key)
+        # Check for architectural mismatch rather than silently using random weights.
+        own = self.model.state_dict()
+        mismatches = [(k, tuple(v.shape), tuple(own[k].shape))
+                      for k, v in weights.items()
+                      if k in own and v.shape != own[k].shape]
+        if mismatches:
+            raise RuntimeError(f"EEGPT checkpoint shape mismatches: {mismatches[:8]}")
+        result = self.model.load_state_dict(weights, strict=False)
+        missing = [k for k in result.missing_keys if k not in skipped]
+        unexpected = list(result.unexpected_keys)
+        if missing or unexpected:
+            raise RuntimeError(
+                f"EEGPT pretrained weight coverage incomplete: missing={missing[:12]}, "
+                f"unexpected={unexpected[:12]}"
+            )
+        print(f"EEGPT loaded {len(weights)} pretrained tensors; "
+              f"rebuilt DEAP channel IDs {tuple(self.model.chans_id.shape)}")
+        self.model = self.model.to(device).eval()
         for p in self.model.parameters():
             p.requires_grad_(False)
 
