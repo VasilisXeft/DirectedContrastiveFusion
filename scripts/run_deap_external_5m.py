@@ -23,6 +23,7 @@ def main():
     p.add_argument("--mode",choices=["late","early","full","unimodal_eeg","unimodal_ppg","unimodal_eda","unimodal_temp","unimodal_face","directed_topk","contrastive_topk","hsic_topk","clam_topk","utility_topk","hybrid_topk"],default=None)
     p.add_argument("--topk",type=int,default=None)
     p.add_argument("--skip-existing",action="store_true")
+    p.add_argument("--dry-run",action="store_true",help="Print train/validation/test subject splits without training")
     a=p.parse_args()
     if a.topk is not None and a.mode not in {"directed_topk","contrastive_topk","hsic_topk","clam_topk","utility_topk","hybrid_topk"}:
         p.error("--topk is only valid with --mode directed_topk or contrastive_topk")
@@ -31,6 +32,24 @@ def main():
     seeds=[a.seed] if a.seed is not None else a.seeds
     experiments=[(a.mode,a.topk)] if a.mode is not None else matrix()
     cfg=load_config(a.config); cfg_name=cfg["dataset"]["name"]; done=[]
+    if a.dry_run:
+        import pandas as pd
+        from cmf.loso import _subjects, _validation_subjects, _fold_manifests
+        cache=Path(cfg["dataset"]["cache_dir"])
+        manifest=pd.read_csv(cache/"manifest.csv")
+        col=cfg.get("loso",{}).get("subject_column","subject")
+        subjects=_subjects(manifest,col)
+        tests=[a.subject] if a.subject is not None else subjects
+        for test_subject in tests:
+            if test_subject not in subjects:
+                raise ValueError(f"Unknown test subject {test_subject}. Available: {subjects}")
+            val_subjects=_validation_subjects(subjects,test_subject,cfg.get("loso",{}))
+            splits=_fold_manifests(manifest,test_subject,val_subjects,col)
+            train_subjects=sorted(set(splits["train"][col].astype(str)))
+            print(f"test={test_subject} val={val_subjects} train={train_subjects} "
+                  f"subject_counts={len(train_subjects)}/{len(val_subjects)}/1 "
+                  f"windows(train/val/test)={len(splits['train'])}/{len(splits['val'])}/{len(splits['test'])}")
+        return
     for seed in seeds:
         for mode,k in experiments:
             name=f"{mode}{'' if k is None else f'_K{k}'}_seed{seed}"
