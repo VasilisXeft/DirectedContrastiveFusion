@@ -17,7 +17,8 @@ DEAP_CHANNELS = [
 
 
 class EEGPTFeatures:
-    def __init__(self, device, model_id="braindecode/eegpt-pretrained", tokens=4):
+    def __init__(self, device, model_id="braindecode/eegpt-pretrained", tokens=4,
+                 target_sfreq=256, input_scale=1e-6):
         from braindecode.models import EEGPT
         from braindecode.models.eegpt import EEGPT_CHANNELS
 
@@ -28,8 +29,14 @@ class EEGPTFeatures:
             raise RuntimeError(f"Too few DEAP channels recognized by EEGPT: {self.names}")
         self.device = device
         self.tokens = tokens
-        self.window_samples = 1024  # 4 seconds at 256 Hz
-        info = mne.create_info(self.names, sfreq=256.0, ch_types=["eeg"] * len(self.names))
+        self.target_sfreq = int(target_sfreq)
+        self.input_scale = float(input_scale)
+        if self.target_sfreq not in (250, 256):
+            raise ValueError("Supported EEGPT analysis sample rates: 250 (checkpoint config), 256 (legacy)")
+        if not np.isfinite(self.input_scale) or self.input_scale <= 0:
+            raise ValueError("EEGPT input_scale must be positive and finite")
+        self.window_samples = 4 * self.target_sfreq
+        info = mne.create_info(self.names, sfreq=float(self.target_sfreq), ch_types=["eeg"] * len(self.names))
         info.set_montage("standard_1020", on_missing="raise")
         # The pretrained checkpoint stores a montage-specific chans_id tensor.
         # Instantiate for DEAP, then load the pretrained tensors excluding only
@@ -38,7 +45,7 @@ class EEGPTFeatures:
         from safetensors.torch import load_file
         self.model = EEGPT(
             n_chans=len(self.names), n_times=self.window_samples,
-            sfreq=256.0, chs_info=info["chs"], return_encoder_output=True,
+            sfreq=float(self.target_sfreq), chs_info=info["chs"], return_encoder_output=True,
             chan_proj_type="none",
         )
         checkpoint = hf_hub_download(repo_id=model_id, filename="model.safetensors")
@@ -72,10 +79,13 @@ class EEGPTFeatures:
         x = np.asarray(signal, dtype=np.float32)
         if x.shape[0] != 32:
             raise ValueError(f"Expected 32 EEG channels, got {x.shape}")
-        # DEAP preprocessed EEG is 128 Hz and typically expressed in microvolts.
-        # EEGPT expects physical EEG signal units; convert µV to V.
-        x = x[self.indices] * 1e-6
-        x = resample_poly(x, 2, 1, axis=-1)
+        # DEAP EEG scale is not asserted here. The caller must explicitly
+        # select/verify a scaling convention. Legacy cache used 1e-6;
+        # EEGPT original pretraining commonly uses millivolt-scale signals.
+        x = x[self.indices] * self.input_scale
+        from math import gcd
+        divisor = gcd(self.target_sfreq, 128)
+        x = resample_poly(x, self.target_sfreq // divisor, 128 // divisor, axis=-1)
         if x.shape[-1] < self.window_samples:
             raise ValueError("EEGPT requires at least 4 seconds of EEG")
         # Cover the full 10-second window with three overlapping 4-second crops.
