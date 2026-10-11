@@ -32,7 +32,9 @@ model:
   reliability_tgt_weight: 0.25
   reliability_loss_weight: 0.1
   contrastive_weight: 0.005
-  selector_loss_weight: 0.1
+  # Default off: avoid reinforcing attention-generated pseudo-labels.
+  # Enable in a dedicated ablation after validating the baseline.
+  selector_loss_weight: 0.0
   pair_selector:
     hidden: 128
     hsic_weight: 1.0
