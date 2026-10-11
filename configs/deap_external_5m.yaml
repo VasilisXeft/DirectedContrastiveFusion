@@ -32,6 +32,12 @@ model:
   reliability_tgt_weight: 0.25
   reliability_loss_weight: 0.1
   contrastive_weight: 0.005
+  selector_loss_weight: 0.1
+  pair_selector:
+    hidden: 128
+    hsic_weight: 1.0
+    attention_weight: 1.0
+    utility_weight: 1.0
   encoders:
     eeg:  {type: precomputed, feature_dim: 200}
     ppg:  {type: precomputed, feature_dim: 512}
