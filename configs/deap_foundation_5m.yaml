@@ -41,7 +41,7 @@ model:
     attention_weight: 1.0
     utility_weight: 1.0
   encoders:
-    eeg:  {type: precomputed, feature_dim: 768}
+    eeg:  {type: precomputed, feature_dim: 512}
     ppg:  {type: precomputed, feature_dim: 1024}
     eda:  {type: precomputed, feature_dim: 1024}
     temp: {type: precomputed, feature_dim: 1024}
