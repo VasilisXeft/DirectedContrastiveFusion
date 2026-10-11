@@ -11,7 +11,7 @@ from cmf.loso import run_loso
 
 
 def matrix():
-    return [("late",None),("full",None)] + [(m,k) for m in ("directed_topk","contrastive_topk") for k in (5,10,15)]
+    return [(f"unimodal_{n}",None) for n in ("eeg","ppg","eda","temp","face")] + [("late",None),("early",None),("full",None)] + [(m,k) for m in ("directed_topk","contrastive_topk") for k in (5,10,15)]
 
 
 def main():
@@ -20,7 +20,7 @@ def main():
     p.add_argument("--seeds",type=int,nargs="+",default=[42])
     p.add_argument("--seed",type=int,default=None,help="Convenience alias for one seed")
     p.add_argument("--subject",default=None)
-    p.add_argument("--mode",choices=["late","full","directed_topk","contrastive_topk","hsic_topk","clam_topk","utility_topk","hybrid_topk"],default=None)
+    p.add_argument("--mode",choices=["late","early","full","unimodal_eeg","unimodal_ppg","unimodal_eda","unimodal_temp","unimodal_face","directed_topk","contrastive_topk","hsic_topk","clam_topk","utility_topk","hybrid_topk"],default=None)
     p.add_argument("--topk",type=int,default=None)
     p.add_argument("--skip-existing",action="store_true")
     a=p.parse_args()
