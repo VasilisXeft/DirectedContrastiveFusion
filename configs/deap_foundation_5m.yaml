@@ -65,4 +65,10 @@ training:
   grad_clip: 1.0
   modality_dropout: 0.0
   reliability_corruption: 0.0
+  # Fits per-feature means/stds independently for each modality on 18 TRAIN subjects
+  # in every fold, then applies the same frozen statistics to validation/test.
+  feature_normalization:
+    enabled: true
+    min_std: 0.00001
+    clip: 8.0
   cpu: false
