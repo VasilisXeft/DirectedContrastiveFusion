@@ -75,11 +75,12 @@ def _synthetic_corrupt(t,severity):
 
 
 class CachedMultimodalDataset(Dataset):
-    def __init__(self,cache_dir,split="train",modality_dropout=0.0,manifest=None,reliability_corruption=0.0):
+    def __init__(self,cache_dir,split="train",modality_dropout=0.0,manifest=None,reliability_corruption=0.0,feature_normalizer=None):
         self.cache_dir=Path(cache_dir); self.manifest=pd.read_csv(self.cache_dir/"manifest.csv") if manifest is None else manifest.copy()
         if split is not None: self.manifest=self.manifest[self.manifest["split"]==split].reset_index(drop=True)
         else: self.manifest=self.manifest.reset_index(drop=True)
         self.modality_dropout=float(modality_dropout); self.reliability_corruption=float(reliability_corruption)
+        self.feature_normalizer=feature_normalizer
         if len(self.manifest)==0: raise ValueError(f"No samples for split={split} in {self.cache_dir/'manifest.csv'}")
 
     def __len__(self): return len(self.manifest)
@@ -88,7 +89,13 @@ class CachedMultimodalDataset(Dataset):
         row=self.manifest.iloc[idx]; mods,target,meta=load_npz(self.cache_dir/row["file"]); out={}; present={}; quality_penalty={}; reliability_target={}; missing=set(meta.get("missing_modalities",[]))
         for name,x in mods.items():
             naturally_missing=name in missing; drop=(not naturally_missing) and self.modality_dropout>0 and np.random.rand()<self.modality_dropout; present[name]=0.0 if (drop or naturally_missing) else 1.0
+            # Estimate representation quality on the original cached features;
+            # training-fitted scaling must not change the quality metric.
             base_pen=_quality_penalty(x)
+            if self.feature_normalizer is not None:
+                if x.ndim==4:
+                    raise ValueError('Feature normalization is only supported for precomputed embedding tensors')
+                x=self.feature_normalizer.transform(name,x)
             if x.ndim==4: t=torch.from_numpy(x).float().permute(0,3,1,2)/255.0
             else: t=torch.from_numpy(x).float()
             severity=0.0
