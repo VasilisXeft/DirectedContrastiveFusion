@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pandas as pd
 
+if str(Path(__file__).resolve().parents[1]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.run_deap_trial_fusion import development_validation_groups, expand_modes
 
 
