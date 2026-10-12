@@ -15,6 +15,7 @@ from cmf.feature_normalization import FeatureStandardizer
 from cmf.utils.io import save_npz
 from scripts.run_deap_trial_fusion import (
     build_neural_model, metric_summary, ridge_predict, split_development,
+    development_validation_groups,
 )
 
 
@@ -140,6 +141,27 @@ class TestDEAPTrialBenchmark(unittest.TestCase):
         self.assertEqual(val.subject.nunique(), 3)
         self.assertEqual(val_ids, ["s21", "s14", "s07"])
         self.assertNotIn("s22", set(train.subject) | set(val.subject))
+
+
+    def test_seven_disjoint_three_subject_groups(self):
+        manifest = pd.DataFrame([
+            {"file": f"s{i:02d}.npz", "subject": f"s{i:02d}",
+             "trial": 0, "label": i % 2}
+            for i in range(1, 23)
+        ])
+        groups = development_validation_groups(manifest)
+        self.assertEqual(len(groups), 7)
+        self.assertEqual(groups[6], ["s07", "s14", "s21"])
+        all_validated = [subject for group in groups for subject in group]
+        self.assertEqual(len(all_validated), 21)
+        self.assertEqual(len(set(all_validated)), 21)
+        self.assertNotIn("s22", all_validated)
+        for index, expected in enumerate(groups):
+            train, val, actual = split_development(manifest, val_group=index)
+            self.assertEqual(set(actual), set(expected))
+            self.assertEqual(set(val.subject), set(expected))
+            self.assertEqual(train.subject.nunique(), 18)
+            self.assertNotIn("s22", set(train.subject) | set(val.subject))
 
 
 if __name__ == "__main__":
