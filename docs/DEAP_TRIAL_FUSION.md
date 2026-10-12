@@ -79,6 +79,10 @@ Baselines:
 - full: all **20 directed cross-modal attention pairs**.
 - directed_topk: trainable global directed top-5 selection of 20 pairs
   (use '--topk 10' for a 50% pair budget ablation).
+  IMPORTANT: this is an interaction-CONTRIBUTION budget, not a verified
+  reduction in training FLOPs. Straight-through selection still computes
+  nonselected attention edges during training to propagate gradients;
+  inference skips entirely unselected pairs in a batch.
 
 All neural variants use the same backbone cache, the same 18/3
 train/validation subjects, the same independent per-feature
