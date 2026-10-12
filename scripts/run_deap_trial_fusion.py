@@ -290,7 +290,26 @@ def train_neural(mode, train_ds, val_ds, normalizer, args, outdir):
     return best_metrics
 
 
-def split_development(manifest, reserved_subject="s22"):
+def development_validation_groups(manifest, reserved_subject="s22"):
+    """Seven disjoint 3-subject groups among the 21 development participants.
+
+    For s22 held out, group 6 is [s07, s14, s21], equal to the
+    original three-subject validation set. All choices use IDs only.
+    """
+    subject_ids = _subjects(manifest, "subject")
+    if reserved_subject not in subject_ids or len(subject_ids) != 22:
+        raise ValueError("Expected exactly 22 subjects including reserved test subject")
+    dev_ids = [subject for subject in subject_ids if subject != reserved_subject]
+    if len(dev_ids) != 21:
+        raise AssertionError("Expected 21 development subjects")
+    groups = [[dev_ids[i + j * 7] for j in range(3)] for i in range(7)]
+    seen = [subject for group in groups for subject in group]
+    if len(seen) != 21 or set(seen) != set(dev_ids):
+        raise AssertionError("Validation groups must partition development subjects")
+    return groups
+
+
+def split_development(manifest, reserved_subject="s22", val_group=None):
     """Use exact same 18/3/1 split as five-modal LOSO; NEVER return test rows."""
     subject_ids = _subjects(manifest, "subject")
     if reserved_subject not in subject_ids:
@@ -299,10 +318,16 @@ def split_development(manifest, reserved_subject="s22"):
         raise ValueError(
             f"This specific 18/3/1 benchmark expects 22 subjects, found {len(subject_ids)}"
         )
-    val_ids = _validation_subjects(subject_ids, reserved_subject, {
-        "validation_strategy": "spaced_previous",
-        "validation_subject_count": 3,
-    })
+    if val_group is None:
+        val_ids = _validation_subjects(subject_ids, reserved_subject, {
+            "validation_strategy": "spaced_previous",
+            "validation_subject_count": 3,
+        })
+    else:
+        groups = development_validation_groups(manifest, reserved_subject)
+        if not 0 <= val_group < len(groups):
+            raise ValueError(f"val_group must be between 0 and {len(groups)-1}")
+        val_ids = groups[val_group]
     partitions = _fold_manifests(manifest, reserved_subject, val_ids, "subject")
     if partitions["train"]["subject"].nunique() != 18:
         raise AssertionError("Expected 18 distinct training subjects")
@@ -321,6 +346,8 @@ def main():
     p.add_argument("--cache", default="data/features/deap_foundation_5m")
     p.add_argument("--out", default="runs/deap_foundation_5m/trial_fusion_dev")
     p.add_argument("--reserve", default="s22")
+    p.add_argument("--val-group", type=int, choices=range(7), default=None,
+                   metavar="0..6", help="Development CV validation group (3 subjects); default original s07/s14/s21")
     p.add_argument("--modes", nargs="+", default=DEFAULT_MODES)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--epochs", type=int, default=30)
@@ -349,7 +376,7 @@ def main():
 
     cache = Path(args.cache)
     manifest = pd.read_csv(cache / "manifest.csv", dtype={"subject": str})
-    train_man, val_man, validation_ids = split_development(manifest, args.reserve)
+    train_man, val_man, validation_ids = split_development(manifest, args.reserve, args.val_group)
     print(
         f"TRIAL-LEVEL DEVELOPMENT ONLY: train subjects=18, validation={validation_ids}, "
         f"RESERVED TEST={args.reserve} (not loaded). "
@@ -360,11 +387,15 @@ def main():
     if args.dry_run:
         return
 
-    output_root = Path(args.out) / f"seed{args.seed}"
+    output_root = Path(args.out)
+    if args.val_group is not None:
+        output_root = output_root / f"dev_group_{args.val_group:02d}"
+    output_root = output_root / f"seed{args.seed}"
     output_root.mkdir(parents=True, exist_ok=True)
     signature = {
         "cache": str(cache.resolve()),
         "reserve": args.reserve,
+        "validation_group": args.val_group,
         "train_subjects": sorted(train_man["subject"].unique().tolist()),
         "validation_subjects": validation_ids,
         "seed": args.seed,
