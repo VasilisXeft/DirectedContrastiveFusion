@@ -395,7 +395,6 @@ def main():
     signature = {
         "cache": str(cache.resolve()),
         "reserve": args.reserve,
-        "validation_group": args.val_group,
         "train_subjects": sorted(train_man["subject"].unique().tolist()),
         "validation_subjects": validation_ids,
         "seed": args.seed,
@@ -411,6 +410,8 @@ def main():
         "d_model": args.d_model,
         "heads": args.heads,
     }
+    if args.val_group is not None:
+        signature["validation_group"] = args.val_group
     contract_path = output_root / "benchmark_contract.json"
     if contract_path.exists():
         if json.loads(contract_path.read_text()) != signature:
