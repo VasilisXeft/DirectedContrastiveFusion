@@ -1,5 +1,7 @@
 # DEAP foundation-model benchmark (experimental)
 
+**New trial-level benchmark:** [DEAP_TRIAL_FUSION.md](DEAP_TRIAL_FUSION.md). One label per 60-second trial, eleven chronological modality tokens, training-only feature normalization, separate unimodal/linear/fusion/directed-topk development comparisons. Subject s22 is reserved and not evaluated during tuning.
+
 **Input-contract audit and normalized fusion:** see [FOUNDATION_INPUT_CONTRACT.md](FOUNDATION_INPUT_CONTRACT.md). The existing EEGPT cache was generated with the legacy x1e-6 input scaling and 256Hz resampling; its validity must be audited before drawing scientific conclusions. The LOSO training now fits per-modality z-score statistics from TRAIN subjects only.
 
 ## Requirements
