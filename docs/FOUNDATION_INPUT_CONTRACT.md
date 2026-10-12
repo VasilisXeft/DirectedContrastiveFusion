@@ -82,3 +82,66 @@ same two subjects and windows at two candidate scales (1e-6 and 1e-3).
 Reports output variance and relative embedding changes. This is a **sensitivity
 test**, not a supervised comparison or proof that larger variance is better.
 Neither validation nor final test labels are used, and no cache is changed.
+
+## Empirical input-scale audit (s01/s02, 12 sampled 10-second windows)
+
+The local adapter loaded all 102 expected EEGPT pretrained tensors; all
+32 DEAP channels matched the EEGPT channel vocabulary. Both 250-Hz
+and 256-Hz input configurations pass their deterministic shape/scale
+unit tests. At **250 Hz on the same 12 windows**:
+
+- Legacy input multiplier 1e-6: mean between-window embedding feature
+  standard deviation 0.00081824; embedding mean L2 norm 26.517.
+- Candidate input multiplier 1e-3: between-window feature standard
+  deviation 0.1481348; mean embedding norm 22.228.
+- Mean paired embedding L2 difference 18.8616, or 0.7113 times the
+  mean legacy embedding norm.
+
+The variability increases approximately **181-fold**. This establishes
+that **raw EEG input scaling drastically changes what pretrained EEGPT
+encodes**; it does *not* establish better emotion recognition, because
+neither labels nor subject-disjoint performance were assessed in this
+small unlabeled pilot.
+
+### Paired, trial-level, development-only input ablation
+
+New script: [compare_deap_eegpt_inputs.py](../scripts/compare_deap_eegpt_inputs.py)
+
+It compares THREE EEGPT candidates on the same DEAP trials and 10-second
+windows, holding backbone weights fixed:
+
+- `cached_256_1e-6`: uses old frozen cache at 256 Hz / 1e-6.
+- `eegpt_250_1e-6`: recomputes only EEGPT at 250 Hz / 1e-6.
+- `eegpt_250_1e-3`: recomputes only EEGPT at 250 Hz / 1e-3.
+
+Both new arms share a model instance, raw trial data, window starts,
+and pooling. The default is three 10-second windows per trial (starts
+0, 25, 50 s); the existing cached baseline is selected at those *same*
+starts. You may use `--windows-per-trial 6` or `11`, at greater compute
+cost. Output is one averaged 512-D vector per trial, matching the
+one-rating-per-60s DEAP task.
+
+Evaluation is a paired 21-fold *development-only* subject LOSO with
+a **fixed** RidgeClassifier(alpha=100, class_weight=balanced). On each
+fold, StandardScaler is fit on training trials only. The final `s22`
+subject is never opened. Each subject's new embeddings are saved in an
+independent resume-safe cache under `runs/deap_foundation_5m/eegpt_input_comparison`;
+neither existing five-modality NPZs nor their manifest are changed.
+
+Commands:
+
+    python -m unittest discover -s tests -p test_compare_deap_eegpt_inputs.py
+    python scripts/compare_deap_eegpt_inputs.py --deap-dir "C:/DEAP/data_preprocessed_python" --dry-run
+    python scripts/compare_deap_eegpt_inputs.py --deap-dir "C:/DEAP/data_preprocessed_python"
+
+Compare the **paired per-subject** differences, mean and standard
+deviation of balanced accuracy / macro-F1. More variable EEGPT
+embeddings alone are insufficient evidence to change preprocessing.
+If the 250 Hz / 1e-3 arm clearly transfers better, re-extract **EEGPT
+only**, then build a separate five-modality cache while keeping the
+existing MOMENT/DINOv2 arrays and preserving a documented
+preprocessing manifest.
+
+Caution: this script freezes the sampled window count and selected
+subjects in the subject-level cache contract; choosing a different
+window count or model requires a different `--out` directory.
