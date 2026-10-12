@@ -264,7 +264,9 @@ def train_neural(mode, train_ds, val_ds, normalizer, args, outdir):
                 "model": model.state_dict(),
                 "mode": mode,
                 "shapes": train_ds.shapes(),
-                "feature_normalization": normalizer.state_dict(),
+                "feature_normalization": (
+                    normalizer.state_dict() if normalizer is not None else None
+                ),
                 "seed": args.seed,
                 "epoch": epoch,
                 "best_validation": metrics,
@@ -431,7 +433,7 @@ def main():
             else:
                 # Models are fit anew for each mode on identical subjects and tokens.
                 metrics = train_neural(
-                    mode, train_ds, val_ds, normalizer, args, result_dir
+                    mode, train_ds, val_ds, applied_normalizer, args, result_dir
                 )
             print(
                 f"BEST VAL {mode}: subject mean={metrics['subject_mean']}; "
