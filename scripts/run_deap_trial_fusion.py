@@ -38,6 +38,7 @@ from torch.utils.data import DataLoader
 from cmf.datasets.common import collate_multimodal
 from cmf.datasets.deap_trials import DEAPTrialDataset, MODALITY_ORDER, group_trials
 from cmf.feature_normalization import FeatureStandardizer
+from cmf.losses import classification_loss
 from cmf.loso import _fold_manifests, _subjects, _validation_subjects
 from cmf.models.fusion import ContrastiveSparseFusion
 from cmf.utils.seed import seed_everything
@@ -223,7 +224,10 @@ def train_neural(mode, train_ds, val_ds, normalizer, args, outdir):
             q = {m: x.to(device) for m, x in batch["quality_penalty"].items()}
             y = batch["target"].long().to(device).view(-1)
             logits, aux = model(mods, present, q)
-            loss = F.cross_entropy(logits, y, weight=class_weights)
+            loss = classification_loss(
+                logits, y, kind=args.loss, class_weights=class_weights,
+                smoothing=args.label_smoothing, gamma=args.focal_gamma,
+            )
             if not torch.isfinite(loss):
                 raise FloatingPointError(f"Non-finite loss in mode={mode} epoch={epoch}")
             optimizer.zero_grad(set_to_none=True)
@@ -272,8 +276,13 @@ def train_neural(mode, train_ds, val_ds, normalizer, args, outdir):
                 "best_validation": metrics,
                 "settings": {
                     "topk": args.topk, "d_model": args.d_model,
-                    "heads": args.heads, "reliability": False,
+                    "heads": args.heads,
+        "loss": args.loss,
+        "label_smoothing": args.label_smoothing,
+        "focal_gamma": args.focal_gamma, "reliability": False,
                     "window_tokens": 11,
+                    "loss": args.loss, "label_smoothing": args.label_smoothing,
+                    "focal_gamma": args.focal_gamma,
                 },
             }, outdir / "best.pt")
         else:
@@ -356,6 +365,9 @@ def main():
     p.add_argument("--lr", type=float, default=1e-4)
     p.add_argument("--weight-decay", type=float, default=1e-4)
     p.add_argument("--grad-clip", type=float, default=1.0)
+    p.add_argument("--loss", choices=["ce", "label_smoothing", "focal"], default="ce")
+    p.add_argument("--label-smoothing", type=float, default=0.1)
+    p.add_argument("--focal-gamma", type=float, default=2.0)
     p.add_argument("--topk", type=int, default=5)
     p.add_argument("--d-model", type=int, default=128)
     p.add_argument("--heads", type=int, default=4)
@@ -369,6 +381,8 @@ def main():
     args = p.parse_args()
     if args.epochs <= 0 or args.batch_size <= 0 or args.topk not in range(1, 21):
         p.error("epochs and batch-size must be positive; topk must be between 1 and 20")
+    if not 0 <= args.label_smoothing < 1 or args.focal_gamma < 0:
+        p.error("label-smoothing must be in [0,1) and focal-gamma >= 0")
     if args.d_model % args.heads != 0:
         p.error("d-model must be divisible by heads")
     modes = expand_modes(args.modes)
